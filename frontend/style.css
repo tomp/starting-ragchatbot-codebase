@@ -111,6 +111,34 @@ header h1 {
     margin-bottom: 0;
 }
 
+/* New Chat Button */
+.new-chat-button {
+    width: 100%;
+    padding: 0.75rem 1rem;
+    background: var(--primary-color);
+    border: 1px solid var(--primary-color);
+    border-radius: 8px;
+    color: white;
+    font-size: 0.875rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    text-align: center;
+}
+
+.new-chat-button:hover {
+    background: var(--primary-hover);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
+}
+
+.new-chat-button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
 /* Main Chat Area */
 .chat-main {
     flex: 1;
@@ -243,6 +271,55 @@ header h1 {
 .sources-content {
     padding: 0 0.5rem 0.25rem 1.5rem;
     color: var(--text-secondary);
+}
+
+/* Sources list styling */
+.sources-list {
+    list-style: none;
+    padding: 0;
+    margin: 0.5rem 0 0 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.source-item {
+    display: inline-block;
+}
+
+/* Source link styling - badge style */
+.source-link {
+    display: inline-block;
+    padding: 0.35rem 0.75rem;
+    background: rgba(37, 99, 235, 0.1);
+    color: var(--primary-color);
+    text-decoration: none;
+    border-radius: 6px;
+    font-size: 0.8rem;
+    transition: all 0.2s ease;
+    border: 1px solid rgba(37, 99, 235, 0.3);
+}
+
+.source-link:hover {
+    background: rgba(37, 99, 235, 0.2);
+    border-color: var(--primary-color);
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.source-link:active {
+    transform: translateY(0);
+}
+
+/* Source text styling - badge style for non-clickable sources */
+.source-text {
+    display: inline-block;
+    padding: 0.35rem 0.75rem;
+    background: rgba(148, 163, 184, 0.1);
+    color: var(--text-secondary);
+    border-radius: 6px;
+    font-size: 0.8rem;
+    border: 1px solid rgba(148, 163, 184, 0.2);
 }
 
 /* Markdown formatting styles */
