@@ -5,7 +5,7 @@ from vector_store import VectorStore
 from ai_generator import AIGenerator
 from session_manager import SessionManager
 from search_tools import ToolManager, CourseSearchTool
-from models import Course, Lesson, CourseChunk
+from models import Course, Lesson, CourseChunk, SourceCitation
 
 class RAGSystem:
     """Main orchestrator for the Retrieval-Augmented Generation system"""
@@ -126,8 +126,9 @@ class RAGSystem:
             tool_manager=self.tool_manager
         )
         
-        # Get sources from the search tool
-        sources = self.tool_manager.get_last_sources()
+        # Get sources from the search tool and convert to SourceCitation objects
+        raw_sources = self.tool_manager.get_last_sources()
+        sources = [SourceCitation(text=s['text'], url=s.get('url')) for s in raw_sources]
 
         # Reset sources after retrieving them
         self.tool_manager.reset_sources()
