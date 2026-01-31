@@ -1,4 +1,4 @@
-from typing import Dict, Any, Optional, Protocol
+from typing import Dict, Any, Optional, Protocol, List
 from abc import ABC, abstractmethod
 from vector_store import VectorStore, SearchResults
 
@@ -122,6 +122,112 @@ class CourseSearchTool(Tool):
         self.last_sources = sources
 
         return "\n\n".join(formatted)
+
+
+class CourseOutlineTool(Tool):
+    """Tool for retrieving course outlines and structure"""
+
+    def __init__(self, vector_store: VectorStore):
+        self.store = vector_store
+        self.last_sources = []
+
+    def get_tool_definition(self) -> Dict[str, Any]:
+        return {
+            "name": "get_course_outline",
+            "description": "Retrieve course structure showing all lessons and topics. Use for questions about what a course covers, its lesson list, or course navigation.",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "course_name": {
+                        "type": "string",
+                        "description": "Course title or partial name (e.g., 'MCP', 'Building'). Omit to see all available courses."
+                    }
+                },
+                "required": []
+            }
+        }
+
+    def execute(self, course_name: Optional[str] = None) -> str:
+        # Get all course metadata
+        all_courses = self.store.get_all_courses_metadata()
+
+        # Handle empty catalog
+        if not all_courses:
+            self.last_sources = []
+            return "No courses are currently available in the system."
+
+        # If course_name provided, resolve and filter
+        if course_name:
+            resolved_title = self.store._resolve_course_name(course_name)
+            if not resolved_title:
+                self.last_sources = []
+                available = ', '.join([c['title'] for c in all_courses])
+                return f"No course found matching '{course_name}'. Available courses: {available}"
+
+            # Find matching course
+            matching_course = next(
+                (c for c in all_courses if c['title'] == resolved_title),
+                None
+            )
+
+            if not matching_course:
+                self.last_sources = []
+                return f"Error: Course '{resolved_title}' metadata not found."
+
+            return self._format_single_course_outline(matching_course)
+        else:
+            return self._format_all_courses_outline(all_courses)
+
+    def _format_single_course_outline(self, course_meta: Dict[str, Any]) -> str:
+        title = course_meta.get('title', 'Unknown Course')
+        instructor = course_meta.get('instructor', 'Unknown')
+        course_link = course_meta.get('course_link')
+        lessons = course_meta.get('lessons', [])
+
+        lines = [f"Course: {title}"]
+        lines.append(f"Instructor: {instructor}")
+        if course_link:
+            lines.append(f"Course Link: {course_link}")
+        lines.append("")
+        lines.append(f"Lessons ({len(lessons)} total):")
+
+        for lesson in lessons:
+            lesson_num = lesson.get('lesson_number', '?')
+            lesson_title = lesson.get('lesson_title', 'Untitled')
+            lesson_link = lesson.get('lesson_link')
+
+            lines.append(f"{lesson_num}. {lesson_title}")
+            if lesson_link:
+                lines.append(f"   Link: {lesson_link}")
+
+        # Track source for UI
+        self.last_sources = [{'text': title, 'url': course_link}]
+
+        return "\n".join(lines)
+
+    def _format_all_courses_outline(self, courses: List[Dict[str, Any]]) -> str:
+        lines = ["Available Courses:", ""]
+        sources = []
+
+        for i, course in enumerate(courses, 1):
+            title = course.get('title', 'Unknown Course')
+            instructor = course.get('instructor', 'Unknown')
+            course_link = course.get('course_link')
+            lesson_count = course.get('lesson_count', len(course.get('lessons', [])))
+
+            lines.append(f"{i}. {title} ({lesson_count} lessons)")
+            lines.append(f"   Instructor: {instructor}")
+            if course_link:
+                lines.append(f"   Link: {course_link}")
+            lines.append("")
+
+            sources.append({'text': title, 'url': course_link})
+
+        lines.append("Use the outline tool with a specific course name to see the full lesson list.")
+        self.last_sources = sources
+
+        return "\n".join(lines)
+
 
 class ToolManager:
     """Manages available tools for the AI"""
