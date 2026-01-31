@@ -1,0 +1,2641 @@
+
+╭─── Claude Code v2.1.19 ──────────────────────────────────────────────────────╮
+│                             │ Tips for getting started                       │
+│        Welcome back!        │ ✔ Run /init to create a CLAUDE.md file with i… │
+│                             │ ────────────────────────────────────────────── │
+│           ▐▛███▜▌           │ Recent activity                                │
+│          ▝▜█████▛▘          │ 3d ago  give me an overview of the codebase    │
+│            ▘▘ ▝▝            │ 3d ago  give me an overview of the codebase    │
+│                             │ 3d ago  give me an overview of the codebase    │
+│   Sonnet 4.5 · Claude API   │ /resume for more                               │
+│        ~/…/example_2        │                                                │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+❯ give me an overview of the codebase 
+
+● I'll explore the codebase to give you a comprehensive overview.
+
+● Explore(Explore codebase structure)
+  ⎿  Done (25 tool uses · 40.3k tokens · 49s)
+
+● Codebase Overview
+
+  This is a Course Materials RAG System - an educational Q&A application that
+  uses Retrieval-Augmented Generation to answer questions about course content.
+
+  Architecture
+
+  Backend (FastAPI + Python 3.13)
+  - app.py - Main API server with /api/query and /api/courses endpoints
+  - rag_system.py - Orchestrates the RAG pipeline
+  - vector_store.py - ChromaDB wrapper for semantic search
+  - ai_generator.py - Anthropic Claude API integration with tool use
+  - document_processor.py - Parses course files and creates chunks
+  - search_tools.py - Tool definitions for Claude to search course content
+  - session_manager.py - Manages conversation history per session
+
+  Frontend (HTML/CSS/JavaScript)
+  - index.html - Chat interface with sidebar
+  - style.css - Dark theme styling
+  - script.js - Client-side chat logic and API calls
+
+  Sample Data
+  - docs/ - Contains 4 course transcript files (course1-4_script.txt)
+
+  How It Works
+
+  1. Document Processing: Loads course files from docs/, extracts metadata
+  (titles, instructors, lessons), and chunks content into ~800 character
+  segments with overlap
+  2. Vector Storage: Stores chunks in ChromaDB using Sentence Transformers
+  embeddings (all-MiniLM-L6-v2 model)
+  3. Query Processing: User asks questions via web UI → FastAPI endpoint → RAG
+  system
+  4. Tool-Based Search: Claude decides when to call the CourseSearchTool to
+  retrieve relevant content
+  5. Response Generation: Claude synthesizes answers from search results with
+  source citations
+  6. Session Management: Maintains conversation history (last 2 exchanges) per
+  session
+
+  Key Features
+
+  - Semantic search across course content and lesson-specific filtering
+  - Course name fuzzy matching via vector similarity
+  - Claude tool use for controlled, fact-based responses
+  - Session-based conversation context
+  - Modern chat UI with suggested questions and course statistics
+  - Markdown rendering for formatted responses
+
+  Tech Stack
+
+  - AI: Anthropic Claude Sonnet 4 (claude-sonnet-4-20250514)
+  - Vector DB: ChromaDB 1.0.15
+  - Embeddings: Sentence Transformers
+  - Web Framework: FastAPI 0.116.1
+  - Package Manager: uv
+
+  Getting Started
+
+  Run ./run.sh which starts the FastAPI server on port 8000. Requires
+  ANTHROPIC_API_KEY in .env file.
+
+✻ Baked for 1m 15s
+
+❯ how are the course materials processed? 
+
+● I'll examine the document processing implementation to show you exactly how
+  course materials are processed.
+
+● Read(backend/document_processor.py)
+  ⎿  Read 260 lines
+
+● Course Materials Processing
+
+  The course materials processing happens in document_processor.py through the
+  DocumentProcessor class. Here's the detailed flow:
+
+  1. File Reading (lines 13-21)
+
+  - Reads files with UTF-8 encoding
+  - Falls back to UTF-8 with error ignoring if normal read fails
+  - Handles encoding issues gracefully
+
+  2. Metadata Extraction (lines 110-146)
+
+  The processor expects a specific format at the top of each course file:
+  Course Title: [title]
+  Course Link: [url]
+  Course Instructor: [name]
+
+  - Line 1: Extracts course title (or uses filename as fallback)
+  - Lines 2-4: Checks first 4 lines for "Course Link:" and "Course Instructor:"
+  patterns using regex
+  - Creates a Course object with this metadata
+
+  3. Lesson Parsing (lines 148-243)
+
+  After metadata (starting from line 4), the processor looks for lesson markers:
+
+  Pattern: Lesson N: Title (e.g., "Lesson 0: Introduction")
+
+  For each lesson:
+  - Extracts lesson number and title using regex: r'^Lesson\s+(\d+):\s*(.+)$'
+  - Checks if next line contains "Lesson Link:" and captures it
+  - Collects all content until the next lesson marker
+  - Creates a Lesson object with metadata
+  - Processes lesson content into chunks
+
+  4. Intelligent Text Chunking (lines 25-91)
+
+  This is the most sophisticated part:
+
+  Step 1: Text Normalization
+  - Normalizes whitespace (removes extra spaces/newlines)
+  - Cleans up the text
+
+  Step 2: Sentence Splitting
+  - Uses smart regex: r'(?<!\w\.\w.)(?<![A-Z][a-z]\.)(?<=\.|\!|\?)\s+(?=[A-Z])'
+  - Handles abbreviations correctly (e.g., "Mr." or "U.S." won't trigger splits)
+  - Splits on periods, exclamation marks, or question marks followed by capital
+  letters
+
+  Step 3: Chunk Building
+  - Configurable chunk size (default: 800 characters)
+  - Builds chunks sentence by sentence
+  - Adds sentences until chunk size would be exceeded
+  - Maintains sentence integrity (never splits mid-sentence)
+
+  Step 4: Overlap Calculation
+  - Configurable overlap (default: 100 characters)
+  - Counts backwards from end of chunk to find overlap sentences
+  - Next chunk starts with overlap sentences from previous chunk
+  - Ensures context continuity between chunks
+
+  5. Context Enrichment (lines 184-189, 232-234)
+
+  The processor adds contextual information to chunks:
+
+  First chunk of each lesson (lines 184-188):
+  "Lesson {N} content: {chunk_text}"
+
+  Last lesson processing (lines 232-234):
+  "Course {title} Lesson {N} content: {chunk_text}"
+
+  This helps the vector search understand which lesson/course each chunk belongs
+   to.
+
+  6. Chunk Creation (lines 190-197)
+
+  Each chunk becomes a CourseChunk object containing:
+  - content - The text chunk (with context)
+  - course_title - Parent course
+  - lesson_number - Parent lesson
+  - chunk_index - Sequential position in document
+
+  7. Fallback Handling (lines 245-257)
+
+  If no lesson markers are found:
+  - Treats entire document (after metadata) as one course
+  - Chunks the full content
+  - Still creates CourseChunk objects with course_title
+
+  Example Processing Flow
+
+  Given a file like:
+  Course Title: Introduction to RAG
+  Course Link: https://example.com
+  Course Instructor: Andrew Ng
+
+  Lesson 0: What is RAG?
+  RAG stands for Retrieval-Augmented Generation...
+
+  Lesson 1: Vector Databases
+  Vector databases store embeddings...
+
+  The processor:
+  1. Extracts: title="Introduction to RAG", link, instructor="Andrew Ng"
+  2. Finds Lesson 0, collects its content
+  3. Chunks Lesson 0 content into ~800 char pieces with 100 char overlap
+  4. Adds "Lesson 0 content:" prefix to first chunk
+  5. Repeats for Lesson 1
+  6. Returns Course object + list of CourseChunk objects
+
+  Key Configuration (from config.py)
+
+  - CHUNK_SIZE = 800 - Maximum characters per chunk
+  - CHUNK_OVERLAP = 100 - Character overlap between chunks
+
+  This creates a rich, structured representation optimized for semantic search
+  with proper context preservation.
+
+❯ trace the process of handling a user's query from frontend to backend 
+
+● I'll trace the complete query flow from frontend to backend by examining the
+  relevant files.
+
+● Read(frontend/script.js)
+  ⎿  Read 191 lines
+
+● Read(backend/app.py)
+  ⎿  Read 119 lines
+
+● Read(backend/rag_system.py)
+  ⎿  Read 147 lines
+
+● Read(backend/ai_generator.py)
+  ⎿  Read 135 lines
+
+● Read(backend/search_tools.py)
+  ⎿  Read 154 lines
+
+● Read(backend/vector_store.py)
+  ⎿  Read 267 lines
+
+● Read(backend/session_manager.py)
+  ⎿  Read 61 lines
+
+● Now I'll create a comprehensive trace of the query flow from frontend to
+  backend and back.
+
+  Complete Query Flow Trace
+
+  Here's the step-by-step journey of a user query through the system:
+
+  FRONTEND: User Sends Query
+
+  1. User Input (script.js:45-96)
+  - User types query in chatInput field or clicks suggested question
+  - Presses Enter or clicks Send button
+  - sendMessage() function triggered
+
+  2. Build API Request (script.js:63-72)
+  fetch(`${API_URL}/query`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+          query: query,
+          session_id: currentSessionId  // null for first query
+      })
+  })
+
+  3. Display Loading State (script.js:54-60)
+  - Adds user message to chat UI
+  - Shows animated loading indicator (3 dots)
+  - Disables input controls
+
+  ---
+  BACKEND: API Endpoint Receives Request
+
+  4. FastAPI Route Handler (app.py:56-74)
+  @app.post("/api/query")
+  async def query_documents(request: QueryRequest):
+      # Create session if not provided
+      session_id = request.session_id
+      if not session_id:
+          session_id = rag_system.session_manager.create_session()
+
+      # Process query using RAG system
+      answer, sources = rag_system.query(request.query, session_id)
+
+      return QueryResponse(answer, sources, session_id)
+
+  ---
+  BACKEND: RAG System Orchestration
+
+  5. RAG System Query Method (rag_system.py:102-140)
+
+  Step 5a: Build Prompt
+  prompt = f"Answer this question about course materials: {query}"
+
+  Step 5b: Get Conversation History (rag_system.py:117-119)
+  history = self.session_manager.get_conversation_history(session_id)
+  # Returns formatted string: "User: previous question\nAssistant: previous 
+  answer..."
+
+  Step 5c: Call AI Generator (rag_system.py:122-127)
+  response = self.ai_generator.generate_response(
+      query=prompt,
+      conversation_history=history,
+      tools=self.tool_manager.get_tool_definitions(),
+      tool_manager=self.tool_manager
+  )
+
+  ---
+  BACKEND: AI Generation with Claude
+
+  6. AI Generator Prepares Claude API Call (ai_generator.py:43-80)
+
+  Step 6a: Build System Prompt (ai_generator.py:61-65)
+  system_content = (
+      f"{SYSTEM_PROMPT}\n\nPrevious conversation:\n{conversation_history}"
+      if conversation_history else SYSTEM_PROMPT
+  )
+  System prompt instructs Claude to:
+  - Use search tool for course-specific questions
+  - Answer general questions directly
+  - Provide concise, educational responses
+  - No meta-commentary about searching
+
+  Step 6b: Prepare API Parameters (ai_generator.py:68-77)
+  api_params = {
+      "model": "claude-sonnet-4-20250514",
+      "temperature": 0,
+      "max_tokens": 800,
+      "messages": [{"role": "user", "content": query}],
+      "system": system_content,
+      "tools": tools,  # Tool definitions from ToolManager
+      "tool_choice": {"type": "auto"}
+  }
+
+  Step 6c: Call Claude API (ai_generator.py:80)
+  response = self.client.messages.create(**api_params)
+
+  ---
+  BACKEND: Claude Decides to Use Tool
+
+  7. Handle Tool Use (ai_generator.py:83-84)
+
+  Claude's response has stop_reason == "tool_use", indicating it wants to
+  search.
+
+  8. Tool Execution Handler (ai_generator.py:89-135)
+
+  Step 8a: Extract Tool Call (ai_generator.py:108-114)
+  for content_block in initial_response.content:
+      if content_block.type == "tool_use":
+          # content_block contains:
+          # - name: "search_course_content"
+          # - input: {"query": "...", "course_name": "...", "lesson_number": 
+  ...}
+
+  Step 8b: Execute Tool (search_tools.py:135-140)
+  tool_result = tool_manager.execute_tool(
+      content_block.name,  # "search_course_content"
+      **content_block.input  # query, course_name, lesson_number
+  )
+
+  ---
+  BACKEND: Course Search Tool Execution
+
+  9. CourseSearchTool Execute (search_tools.py:52-86)
+
+  def execute(self, query: str, course_name: Optional[str] = None, 
+              lesson_number: Optional[int] = None) -> str:
+      # Call vector store search
+      results = self.store.search(query, course_name, lesson_number)
+
+      # Handle errors or empty results
+      if results.error: return results.error
+      if results.is_empty(): return "No relevant content found..."
+
+      # Format and return results
+      return self._format_results(results)
+
+  ---
+  BACKEND: Vector Store Search
+
+  10. VectorStore Search (vector_store.py:61-100)
+
+  Step 10a: Resolve Course Name (vector_store.py:79-83)
+  If course_name provided (e.g., "Introduction"):
+  course_title = self._resolve_course_name(course_name)
+  # Searches course_catalog collection with vector similarity
+  # Returns exact course title: "Introduction to Retrieval Augmented Generation"
+
+  Step 10b: Build Filter (vector_store.py:86, 118-133)
+  filter_dict = self._build_filter(course_title, lesson_number)
+  # Examples:
+  # {"course_title": "exact_title"}
+  # {"lesson_number": 2}
+  # {"$and": [{"course_title": "..."}, {"lesson_number": 2}]}
+
+  Step 10c: Query ChromaDB (vector_store.py:93-98)
+  results = self.course_content.query(
+      query_texts=[query],         # Converts to embedding
+      n_results=5,                 # Max results (config.MAX_RESULTS)
+      where=filter_dict            # Filters by course/lesson
+  )
+  # ChromaDB:
+  # 1. Converts query to embedding using Sentence Transformers
+  # 2. Performs cosine similarity search against stored chunk embeddings
+  # 3. Applies filters to metadata
+  # 4. Returns top 5 most similar chunks
+
+  Step 10d: Return Results (vector_store.py:98)
+  return SearchResults.from_chroma(results)
+  # SearchResults contains:
+  # - documents: ["chunk text 1", "chunk text 2", ...]
+  # - metadata: [{"course_title": "...", "lesson_number": ...}, ...]
+  # - distances: [0.234, 0.456, ...]  # Similarity scores
+
+  ---
+  BACKEND: Format Search Results
+
+  11. Format Results (search_tools.py:88-114)
+
+  def _format_results(self, results: SearchResults) -> str:
+      formatted = []
+      sources = []
+
+      for doc, meta in zip(results.documents, results.metadata):
+          course_title = meta.get('course_title')
+          lesson_num = meta.get('lesson_number')
+
+          # Build context header
+          header = f"[{course_title} - Lesson {lesson_num}]"
+          sources.append(f"{course_title} - Lesson {lesson_num}")
+
+          formatted.append(f"{header}\n{doc}")
+
+      self.last_sources = sources  # Store for UI display
+
+      return "\n\n".join(formatted)
+
+  Returns formatted string:
+  [Course Title - Lesson 1]
+  Lesson 1 content: RAG stands for Retrieval-Augmented Generation...
+
+  [Course Title - Lesson 2]
+  Lesson 2 content: Vector databases store embeddings...
+
+  ---
+  BACKEND: Claude Synthesizes Final Answer
+
+  12. Tool Results Back to Claude (ai_generator.py:116-124)
+
+  tool_results.append({
+      "type": "tool_result",
+      "tool_use_id": content_block.id,
+      "content": tool_result  # Formatted search results
+  })
+
+  messages.append({"role": "user", "content": tool_results})
+
+  13. Final Claude API Call (ai_generator.py:127-135)
+
+  final_params = {
+      "model": "claude-sonnet-4-20250514",
+      "temperature": 0,
+      "max_tokens": 800,
+      "messages": [
+          {"role": "user", "content": original_query},
+          {"role": "assistant", "content": [tool_use_block]},
+          {"role": "user", "content": [tool_result]}
+      ],
+      "system": system_content
+  }
+
+  final_response = self.client.messages.create(**final_params)
+  return final_response.content[0].text
+
+  Claude now synthesizes an answer based on the search results.
+
+  ---
+  BACKEND: Extract Sources and Update Session
+
+  14. Get Sources from Tool (rag_system.py:130-133)
+  sources = self.tool_manager.get_last_sources()
+  # Returns: ["Course Title - Lesson 1", "Course Title - Lesson 2", ...]
+
+  self.tool_manager.reset_sources()  # Clear for next query
+
+  15. Update Session History (rag_system.py:136-137)
+  self.session_manager.add_exchange(session_id, query, response)
+  Session history now contains:
+  User: What is RAG?
+  Assistant: RAG stands for Retrieval-Augmented Generation...
+
+  16. Return Response (rag_system.py:140)
+  return response, sources
+
+  ---
+  BACKEND: Send Response to Frontend
+
+  17. API Response (app.py:68-72)
+  return QueryResponse(
+      answer=response,
+      sources=sources,
+      session_id=session_id
+  )
+
+  JSON response:
+  {
+      "answer": "RAG stands for Retrieval-Augmented Generation...",
+      "sources": ["Course Title - Lesson 1", "Course Title - Lesson 2"],
+      "session_id": "session_1"
+  }
+
+  ---
+  FRONTEND: Display Response
+
+  18. Handle API Response (script.js:76-85)
+  const data = await response.json();
+
+  // Update session ID if new
+  if (!currentSessionId) {
+      currentSessionId = data.session_id;
+  }
+
+  // Replace loading message with response
+  loadingMessage.remove();
+  addMessage(data.answer, 'assistant', data.sources);
+
+  19. Render Message (script.js:113-138)
+  function addMessage(content, type, sources = null) {
+      // Convert markdown to HTML for assistant messages
+      const displayContent = type === 'assistant'
+          ? marked.parse(content)  // Render markdown
+          : escapeHtml(content);   // Escape user input
+
+      // Add sources collapsible section
+      if (sources && sources.length > 0) {
+          html += `
+              <details class="sources-collapsible">
+                  <summary>Sources</summary>
+                  <div>${sources.join(', ')}</div>
+              </details>
+          `;
+      }
+
+      chatMessages.appendChild(messageDiv);
+      chatMessages.scrollTop = chatMessages.scrollHeight;  // Auto-scroll
+  }
+
+  20. Re-enable Input (script.js:92-95)
+  chatInput.disabled = false;
+  sendButton.disabled = false;
+  chatInput.focus();
+
+  ---
+  Summary Flow Diagram
+
+  [USER TYPES QUERY]
+          ↓
+  [Frontend: script.js - sendMessage()]
+          ↓
+  [HTTP POST /api/query]
+          ↓
+  [Backend: app.py - query_documents()]
+          ↓
+  [RAG System: rag_system.py - query()]
+          ↓
+  [Session Manager: Get conversation history]
+          ↓
+  [AI Generator: ai_generator.py - generate_response()]
+          ↓
+  [Claude API Call #1 with tools]
+          ↓
+  [Claude decides: "I need to search"]
+          ↓
+  [Tool Manager: execute_tool()]
+          ↓
+  [CourseSearchTool: execute()]
+          ↓
+  [Vector Store: search()]
+          ↓
+  [ChromaDB: Vector similarity search]
+          ↓
+  [Return search results to tool]
+          ↓
+  [Format results with sources]
+          ↓
+  [Tool result back to Claude]
+          ↓
+  [Claude API Call #2 - synthesize answer]
+          ↓
+  [Extract sources from tool]
+          ↓
+  [Session Manager: Store exchange]
+          ↓
+  [Return response + sources]
+          ↓
+  [API Response JSON]
+          ↓
+  [Frontend: Display message + sources]
+          ↓
+  [USER SEES ANSWER]
+
+  The entire flow involves 2 Claude API calls, 1 vector search, and maintains
+  conversation context across queries within the same session.
+
+✻ Baked for 1m 24s
+
+❯ draw a diagram that illustrates this flow 
+
+● I'll create a visual diagram illustrating the complete query flow.
+
+● Write(query_flow_diagram.md)
+  ⎿  Error writing file
+
+● Read(query_flow_diagram.md)
+  ⎿  Read 470 lines
+
+● Update(query_flow_diagram.md)
+  ⎿  Added 132 lines
+        1  # User Query Flow Diagram
+        2  
+        3 +## Interactive Sequence Diagram (Mermaid)                     
+        4 +                                                              
+        5 +```mermaid                                                    
+        6 +sequenceDiagram                                               
+        7 +    participant User                                          
+        8 +    participant Frontend as Frontend<br/>(script.js)          
+        9 +    participant API as FastAPI<br/>(app.py)                   
+       10 +    participant RAG as RAG System<br/>(rag_system.py)         
+       11 +    participant Session as Session Manager<br/>(session_manage
+          +r.py)                                                         
+       12 +    participant AI as AI Generator<br/>(ai_generator.py)      
+       13 +    participant Claude as Claude API<br/>(Anthropic)          
+       14 +    participant Tools as Tool Manager<br/>(search_tools.py)   
+       15 +    participant Vector as Vector Store<br/>(vector_store.py)  
+       16 +    participant Chroma as ChromaDB<br/>(Database)             
+       17 +                                                              
+       18 +    Note over User,Chroma: USER SENDS QUERY                   
+       19 +                                                              
+       20 +    User->>Frontend: Types query & clicks Send                
+       21 +    activate Frontend                                         
+       22 +    Frontend->>Frontend: Disable input, show loading          
+       23 +    Frontend->>Frontend: Add user message to chat             
+       24 +                                                              
+       25 +    Frontend->>API: POST /api/query<br/>{query, session_id}   
+       26 +    activate API                                              
+       27 +                                                              
+       28 +    Note over API,RAG: BACKEND PROCESSING                     
+       29 +                                                              
+       30 +    API->>RAG: query(query, session_id)                       
+       31 +    activate RAG                                              
+       32 +                                                              
+       33 +    RAG->>Session: get_conversation_history(session_id)       
+       34 +    activate Session                                          
+       35 +    Session-->>RAG: Previous conversation context             
+       36 +    deactivate Session                                        
+       37 +                                                              
+       38 +    RAG->>Tools: get_tool_definitions()                       
+       39 +    activate Tools                                            
+       40 +    Tools-->>RAG: [CourseSearchTool definition]               
+       41 +    deactivate Tools                                          
+       42 +                                                              
+       43 +    Note over RAG,Claude: AI GENERATION - FIRST CALL          
+       44 +                                                              
+       45 +    RAG->>AI: generate_response(query, history, tools)        
+       46 +    activate AI                                               
+       47 +                                                              
+       48 +    AI->>AI: Build system prompt with history                 
+       49 +    AI->>Claude: messages.create()<br/>with tools & query     
+       50 +    activate Claude                                           
+       51 +                                                              
+       52 +    Note over Claude: Claude analyzes query<br/>Decides to use
+          + search tool                                                  
+       53 +                                                              
+       54 +    Claude-->>AI: Response: tool_use<br/>{name: "search_course
+          +_content",<br/>input: {query, course_name, lesson_number}}    
+       55 +    deactivate Claude                                         
+       56 +                                                              
+       57 +    Note over AI,Chroma: TOOL EXECUTION PHASE                 
+       58 +                                                              
+       59 +    AI->>Tools: execute_tool("search_course_content", params) 
+       60 +    activate Tools                                            
+       61 +                                                              
+       62 +    Tools->>Vector: search(query, course_name, lesson_number) 
+       63 +    activate Vector                                           
+       64 +                                                              
+       65 +    alt Course name provided                                  
+       66 +        Vector->>Chroma: Query course_catalog<br/>(semantic co
+          +urse name matching)                                           
+       67 +        activate Chroma                                       
+       68 +        Chroma-->>Vector: Exact course title                  
+       69 +        deactivate Chroma                                     
+       70 +        Vector->>Vector: Build filter dict                    
+       71 +    end                                                       
+       72 +                                                              
+       73 +    Vector->>Chroma: Query course_content<br/>(vector similari
+          +ty search)                                                    
+       74 +    activate Chroma                                           
+       75 +    Note over Chroma: 1. Convert query to embedding<br/>2. Cos
+          +ine similarity search<br/>3. Apply filters<br/>4. Return top 5
+          + chunks                                                       
+       76 +    Chroma-->>Vector: Search results<br/>{documents, metadata,
+          + distances}                                                   
+       77 +    deactivate Chroma                                         
+       78 +                                                              
+       79 +    Vector-->>Tools: SearchResults object                     
+       80 +    deactivate Vector                                         
+       81 +                                                              
+       82 +    Tools->>Tools: Format results with headers<br/>Store sourc
+          +es for UI                                                     
+       83 +    Tools-->>AI: Formatted search results string              
+       84 +    deactivate Tools                                          
+       85 +                                                              
+       86 +    Note over AI,Claude: AI GENERATION - SECOND CALL          
+       87 +                                                              
+       88 +    AI->>AI: Build messages with tool results                 
+       89 +    AI->>Claude: messages.create()<br/>(query + tool_use + too
+          +l_result)                                                     
+       90 +    activate Claude                                           
+       91 +                                                              
+       92 +    Note over Claude: Claude synthesizes answer<br/>from searc
+          +h results                                                     
+       93 +                                                              
+       94 +    Claude-->>AI: Final response text                         
+       95 +    deactivate Claude                                         
+       96 +                                                              
+       97 +    AI-->>RAG: Generated answer                               
+       98 +    deactivate AI                                             
+       99 +                                                              
+      100 +    Note over RAG,Session: POST-PROCESSING                    
+      101 +                                                              
+      102 +    RAG->>Tools: get_last_sources()                           
+      103 +    activate Tools                                            
+      104 +    Tools-->>RAG: ["Course - Lesson 1", "Course - Lesson 2"]  
+      105 +    deactivate Tools                                          
+      106 +                                                              
+      107 +    RAG->>Tools: reset_sources()                              
+      108 +    activate Tools                                            
+      109 +    deactivate Tools                                          
+      110 +                                                              
+      111 +    RAG->>Session: add_exchange(session_id, query, response)  
+      112 +    activate Session                                          
+      113 +    Note over Session: Store in session history<br/>(max 2 exc
+          +hanges = 4 messages)                                          
+      114 +    deactivate Session                                        
+      115 +                                                              
+      116 +    RAG-->>API: (answer, sources)                             
+      117 +    deactivate RAG                                            
+      118 +                                                              
+      119 +    API-->>Frontend: JSON Response<br/>{answer, sources, sessi
+          +on_id}                                                        
+      120 +    deactivate API                                            
+      121 +                                                              
+      122 +    Note over Frontend,User: DISPLAY RESPONSE                 
+      123 +                                                              
+      124 +    Frontend->>Frontend: Remove loading indicator             
+      125 +    Frontend->>Frontend: Render markdown answer               
+      126 +    Frontend->>Frontend: Add sources collapsible              
+      127 +    Frontend->>Frontend: Enable input, auto-scroll            
+      128 +                                                              
+      129 +    Frontend-->>User: Display answer with sources             
+      130 +    deactivate Frontend                                       
+      131 +                                                              
+      132 +    Note over User: User sees answer                          
+      133 +```                                                           
+      134 +                                                              
+      135  ## Complete Flow: Frontend → Backend → AI → Response
+      136  
+      137  ```
+
+● I've created a comprehensive flow diagram that illustrates the complete query
+  processing flow. The diagram is saved at:
+
+  query_flow_diagram.md
+
+  How to View the Diagram
+
+  The file contains two visualizations:
+
+  1. Mermaid Sequence Diagram (Top)
+
+  This is an interactive sequence diagram showing the flow between all
+  components. You can view it in:
+  - GitHub: Just open the file on GitHub - it renders Mermaid automatically
+  - VS Code: Install the "Markdown Preview Mermaid Support" extension
+  - Mermaid Live Editor: Copy the mermaid code block and paste at
+  https://mermaid.live
+  - Many markdown viewers support Mermaid natively
+
+  2. Text-Based ASCII Diagram (Below)
+
+  A detailed ASCII art flowchart that works in any text editor
+
+  What the Diagram Shows
+
+  The sequence diagram traces 22 steps across 9 components:
+
+  1. User → Frontend interaction
+  2. Frontend (script.js) → HTTP request
+  3. FastAPI (app.py) → Endpoint handler
+  4. RAG System (rag_system.py) → Orchestration
+  5. Session Manager → Conversation history
+  6. AI Generator → Claude API calls (2 calls)
+  7. Claude API → Tool use decision + synthesis
+  8. Tool Manager → Execute search
+  9. Vector Store → ChromaDB queries
+  10. ChromaDB → Vector similarity search
+
+  Key Highlights
+
+  - Two Claude API calls: First to decide tool use, second to synthesize answer
+  - Vector search flow: Course name resolution → content search → result
+  formatting
+  - Session management: Conversation context preservation
+  - Source tracking: Sources extracted from search results for UI display
+  - End-to-end timing: ~1.5-2.8 seconds total
+
+  The diagram clearly shows the activation/deactivation of each component and
+  the data flow between them, making it easy to understand how a simple user
+  query triggers this sophisticated RAG pipeline.
+
+✻ Brewed for 1m 34s
+
+❯ how do I run this application? 
+
+● I'll check the startup script and configuration to show you how to run the
+  application.
+
+● Read(run.sh)
+  ⎿  Read 16 lines
+
+● Read(.env.example)
+  ⎿  Read 2 lines
+
+● Read(backend/config.py)
+  ⎿  Read 30 lines
+
+● Bash(ls -la /home/pollard/claude-stuff/deeplearning_ai-claude-code-a-highly-ag
+      entic-coding-assistant/example_2/ | grep -E
+      "(\.env|\.python-version|pyproject)")
+  ⎿  -rw-r--r-- 1 pollard users    129 Jan 27 21:00 .env
+     -rw-r--r-- 1 pollard users     98 Jan 24 18:52 .env.example
+     -rw-r--r-- 1 pollard users    356 Jan 24 18:52 pyproject.toml
+     -rw-r--r-- 1 pollard users      5 Jan 24 18:52 .python-version
+
+● Bash(grep -q "sk-" /home/pollard/claude-stuff/deeplearning_ai-claude-code-a-hi
+      ghly-agentic-coding-assistant/example_2/.env && echo "API key appears to
+      be set" || ech…)
+  ⎿  API key appears to be set
+
+● Bash(python3 --version && echo "---" && which uv && uv --version)
+  ⎿  Python 3.14.2
+     ---
+     /home/pollard/.cargo/bin/uv
+     uv 0.8.4
+
+● Great! Your environment is already set up. Here's how to run the application:
+
+  Quick Start
+
+  Since you already have the API key configured and dependencies ready, simply
+  run:
+
+  ./run.sh
+
+  This will:
+  1. Create the docs/ directory if needed
+  2. Start the FastAPI server on port 8000
+  3. Load course materials from the docs/ folder
+  4. Serve the frontend at http://localhost:8000
+
+  Detailed Steps
+
+  1. Make the script executable (if needed):
+  chmod +x run.sh
+
+  2. Run the application:
+  ./run.sh
+
+  3. Access the application:
+  Open your browser and go to:
+  http://localhost:8000
+
+  What Happens on Startup
+
+  The application will:
+  - Start the FastAPI server with auto-reload enabled
+  - Process all .txt, .pdf, and .docx files in the docs/ folder
+  - Create ChromaDB vector embeddings (stored in backend/chroma_db/)
+  - Show output like:
+  Starting Course Materials RAG System...
+  Make sure you have set your ANTHROPIC_API_KEY in .env
+  Loading initial documents...
+  Loaded 4 courses with 156 chunks
+  INFO: Uvicorn running on http://127.0.0.1:8000
+
+  Environment Verification
+
+  Your system is ready:
+  - ✅ Python 3.14.2 installed (requires Python ≥3.13)
+  - ✅ uv package manager installed (v0.8.4)
+  - ✅ .env file exists with API key configured
+  - ✅ Course materials in docs/ folder (4 files)
+
+  Alternative: Manual Start
+
+  If you prefer to run commands manually:
+
+  cd backend
+  uv run uvicorn app:app --reload --port 8000
+
+  First Time Setup (Already Done for You)
+
+  These steps are already complete, but for reference:
+
+  1. Create .env file (✅ Already exists)
+  cp .env.example .env
+  # Edit .env and add your ANTHROPIC_API_KEY
+  2. Install dependencies (✅ Handled by uv run)
+  cd backend
+  uv sync
+
+  Stopping the Server
+
+  Press Ctrl+C in the terminal to stop the server.
+
+  Testing the Application
+
+  Once running, you can:
+  1. Open http://localhost:8000 in your browser
+  2. Try suggested questions in the sidebar
+  3. Ask questions about the course materials
+  4. Check the "Sources" section in responses to see where information came from
+
+  Let me know if you encounter any issues when running it!
+
+✻ Brewed for 45s
+
+❯ /init 
+
+● I'll analyze the codebase and create a comprehensive CLAUDE.md file for future
+   Claude Code instances.
+
+● Read(README.md)
+  ⎿  Read 57 lines
+
+● Search(pattern: "**/.cursor/**")
+  ⎿  Found 0 files
+
+● Search(pattern: "**/.cursorrules")
+  ⎿  Found 0 files
+
+● Search(pattern: "**/.github/copilot-instructions.md")
+  ⎿  Found 0 files
+
+● Read(pyproject.toml)
+  ⎿  Read 16 lines
+
+● Search(pattern: "CLAUDE.md")
+  ⎿  Found 0 files
+
+● Now I'll create a comprehensive CLAUDE.md file based on my analysis of the
+  codebase.
+
+● Write(CLAUDE.md)
+  ⎿  Wrote 246 lines to CLAUDE.md
+       1 # CLAUDE.md
+       2 
+       3 This file provides guidance to Claude Code (claude.ai/code) when
+          working with code in this repository.
+       4 
+       5 ## Project Overview
+       6 
+       7 This is a **Retrieval-Augmented Generation (RAG) system** for ed
+         ucational course materials. It combines ChromaDB vector search w
+         ith Anthropic's Claude API using a tool-based architecture where
+          Claude decides when to search course content.
+       8 
+       9 **Key Architecture Pattern**: Tool-based RAG with two-phase AI g
+         eneration:
+      10 1. Claude receives user query and decides whether to use the sea
+         rch tool
+     … +236 lines (ctrl+o to expand)
+
+● I've created a comprehensive CLAUDE.md file for the repository. Here's what it
+   includes:
+
+  Key Sections
+
+  1. Project Overview - High-level description of the tool-based RAG
+  architecture
+  2. Development Commands - Essential commands for:
+    - Running the application
+    - Managing dependencies with uv
+    - Environment setup
+    - Clearing the vector database
+  3. Architecture Deep Dive - The most important section:
+    - Complete request flow with 11 detailed steps from user input to response
+    - Why two Claude API calls are necessary
+    - Exact file locations and line numbers for key decision points
+  4. Component Responsibilities - Explains the role and critical logic of each
+  major file:
+    - rag_system.py - Orchestrator with no business logic
+    - ai_generator.py - Tool execution loop pattern
+    - search_tools.py - Tool abstraction layer
+    - vector_store.py - Dual collection strategy
+    - document_processor.py - Context-preserving chunking
+    - session_manager.py - Conversation context
+  5. Data Flow Patterns - Code examples showing:
+    - Course loading pipeline
+    - Vector search with filtering
+    - Tool source tracking mechanism
+  6. Configuration - All settings with their defaults and purposes
+  7. Common Modification Patterns - How to:
+    - Add new tools
+    - Change search behavior
+    - Modify AI behavior
+    - Adjust document processing
+  8. Critical Implementation Details - Explains the "why" behind:
+    - Two API calls pattern
+    - Dual ChromaDB collections
+    - Session history as string vs. messages
+    - Source tracking in tools
+
+  The document focuses on the non-obvious architectural patterns that require
+  reading multiple files to understand, like the two-phase Claude API call
+  pattern, the dual collection strategy in ChromaDB, and how sources flow from
+  search tools to the UI.
+
+✻ Brewed for 1m 42s
+
+❯ # always use uv to manage the virtual environment for this project 
+
+● I'll add this important note to the CLAUDE.md file in a prominent location.
+
+● Update(CLAUDE.md)
+  ⎿  Added 4 lines
+      11  2. If search is needed, tool executes and returns formatted res
+          ults
+      12  3. Claude synthesizes final answer from search results
+      13  
+      14 +## Important: Virtual Environment Management                   
+      15 +                                                               
+      16 +**Always use `uv` to manage the virtual environment for this pr
+         +oject.** Do not use `pip`, `venv`, `virtualenv`, or other Pytho
+         +n package managers. All dependency management and Python execut
+         +ion should go through `uv`.                                    
+      17 +                                                               
+      18  ## Development Commands
+      19  
+      20  ### Running the Application
+
+● Update(CLAUDE.md)
+  ⎿  Added 3 lines
+      27  ```bash
+      28  uv sync                                     # Install/update de
+          pendencies
+      29  uv add <package>                            # Add new dependenc
+          y
+      30 +uv run <command>                            # Run any Python co
+         +mmand in managed environment                                   
+      31  ```
+      32  
+      33 +**Note**: Never use `pip install` or create manual virtual envi
+         +ronments. Use `uv` for all operations.                         
+      34 +                                                               
+      35  ### Environment Setup
+      36  ```bash
+      37  cp .env.example .env                        # Create environmen
+          t file
+
+● Done! I've updated the CLAUDE.md file to prominently emphasize that uv should
+  always be used for virtual environment management:
+
+  1. Added a dedicated section right after "Project Overview" titled "Important:
+   Virtual Environment Management" that explicitly states to always use uv and
+  not pip, venv, virtualenv, or other package managers.
+  2. Enhanced the Dependency Management section with:
+    - An additional example: uv run <command> for running Python commands
+    - A clear note: "Never use pip install or create manual virtual
+  environments"
+
+  This ensures future Claude Code instances will immediately understand that all
+   Python operations in this project must go through uv.
+
+❯ /help 
+  ⎿  Help dialog dismissed
+
+❯ add and commit the changes we made to this project 
+
+● I'll add and commit the changes to the repository following git best
+  practices.
+
+● Bash(git status)
+  ⎿  On branch main
+     Your branch is up to date with 'origin/main'.
+     … +7 lines (ctrl+o to expand)
+
+● Bash(git diff query_flow_diagram.md)
+  ⎿  (No content)
+
+● Bash(git log --oneline -5)
+  ⎿  afe4036 updated lab files
+     5d515fb added lab files
+
+● Bash(git add CLAUDE.md query_flow_diagram.md)
+  ⎿  (No content)
+
+● Bash(git commit -m "add documentation for codebase architecture and query
+      flow…)
+  ⎿ [main 5c9f5f5] add documentation for codebase architecture and query fl
+    ow
+     2 files changed, 853 insertions(+)
+    … +2 lines (ctrl+o to expand)
+
+
+● Bash(git status)
+  ⎿  On branch main
+     Your branch is ahead of 'origin/main' by 1 commit.
+       (use "git push" to publish your local commits)
+     … +2 lines (ctrl+o to expand)
+
+● Perfect! I've successfully committed the changes to the repository.
+
+  Commit Summary
+
+  Commit: 5c9f5f5
+  Files added: 2
+  - CLAUDE.md - Comprehensive documentation for Claude Code instances
+  - query_flow_diagram.md - Visual query flow diagrams (Mermaid + ASCII)
+
+  Changes: 853 lines added
+
+  The commit includes:
+  1. CLAUDE.md - Complete architectural documentation covering:
+    - Development commands with uv virtual environment management
+    - 11-step request flow architecture deep dive
+    - Component responsibilities and data flow patterns
+    - Common modification patterns
+    - Critical implementation details explaining design decisions
+  2. query_flow_diagram.md - Visual representations showing:
+    - Interactive Mermaid sequence diagram with 9 components
+    - Detailed ASCII flowchart with 22 steps
+    - Data structures at each stage
+    - Timeline and performance characteristics
+
+  The repository is now ready with comprehensive documentation for future
+  development work. Your branch is ahead of origin/main by 1 commit and ready to
+   push when needed.
+
+✻ Crunched for 37s
+
+! cat .git/config 
+  ⎿  [core]
+        repositoryformatversion = 0
+        filemode = true
+        bare = false
+        logallrefupdates = true
+     [remote "origin"]
+        url =
+     https://github.com/https-deeplearning-ai/starting-ragchatbot-codebase.git
+        fetch = +refs/heads/*:refs/remotes/origin/*
+     [branch "main"]
+        remote = origin
+        merge = refs/heads/main
+
+❯ /? 
+
+● I see you're checking the git remote configuration. Your repository is
+  currently set up to push to:
+
+  https://github.com/https-deeplearning-ai/starting-ragchatbot-codebase.git
+
+  If you want to push the commit we just made to the remote repository, you can
+  run:
+
+  git push origin main
+
+  However, since this appears to be a DeepLearning.AI course repository, you may
+   want to consider:
+
+  1. If you have write access to this repo, you can push directly
+  2. If this is a shared course repo, you might want to fork it first and push
+  to your own fork
+  3. If you want to keep your changes local, you can leave it as is
+
+  Would you like me to help you push the changes, or would you prefer to set up
+  a different remote (like your own fork)?
+
+❯ please help me fork the DeepLearning.ai repo and push the changes to my   
+  fork                                                                      
+
+● I'll help you fork the repository and push your changes to your own fork. Let
+  me first check if you have the GitHub CLI installed, which makes this easier.
+
+● Bash(which gh && gh --version)
+  ⎿  /sbin/gh
+     gh version 2.86.0 (2026-01-21)
+     https://github.com/cli/cli/releases/tag/v2.86.0
+
+● Perfect! You have the GitHub CLI installed. I'll help you fork the repo and
+  push your changes.
+
+● Bash(gh auth status)
+  ⎿  Error: Exit code 1
+     github.com
+       ✓ Logged in to github.com account tomp (GITHUB_TOKEN)
+       - Active account: true
+       - Git operations protocol: ssh
+       - Token: ghp_************************************
+       - Token scopes: 'admin:enterprise', 'admin:gpg_key', 'admin:org', 
+     'admin:public_key', 'admin:repo_hook', 'admin:ssh_signing_key', 'audit_log'
+      'codespace', 'copilot', 'delete:packages', 'delete_repo', 'gist', 
+     'notifications', 'project', 'repo', 'user', 'workflow', 'write:discussion',
+     'write:network_configurations', 'write:packages'
+
+       X Failed to log in to github.com account tomp (keyring)
+       - Active account: false
+     … +3 lines (ctrl+o to see all)
+
+● Great! You're logged in to GitHub as "tomp". Now I'll fork the repository for
+  you. This will:
+  1. Create a fork under your GitHub account (tomp)
+  2. Update the remote to point to your fork
+  3. Keep the original repo as an "upstream" remote
+
+● Bash(gh repo fork --remote=true)
+  ⎿  https://github.com/tomp/starting-ragchatbot-codebase
+
+● Excellent! Your fork has been created at:
+  https://github.com/tomp/starting-ragchatbot-codebase
+
+  Let me verify the remote configuration and then push your changes.
+
+● Bash(git remote -v)
+  ⎿  origin     git@github.com:tomp/starting-ragchatbot-codebase.git (fetch)
+     origin     git@github.com:tomp/starting-ragchatbot-codebase.git (push)
+     upstream   https://github.com/https-deeplearning-ai/starting-ragchatbot
+     -c
+     … +3 lines (ctrl+o to expand)
+
+● Perfect! The remotes have been configured:
+  - origin → Your fork: git@github.com:tomp/starting-ragchatbot-codebase.git
+  - upstream → Original repo:
+  https://github.com/https-deeplearning-ai/starting-ragchatbot-codebase.git
+
+  Now I'll push your commit to your fork.
+
+● Bash(git push origin main)
+  ⎿  Error: Exit code 128
+     git@github.com: Permission denied (publickey).
+     fatal: Could not read from remote repository.
+
+     Please make sure you have the correct access rights
+     and the repository exists.
+
+● There's an SSH key authentication issue. Let me switch the remote to use HTTPS
+   instead, which will work with your GitHub token.
+
+● Bash(git remote set-url origin
+      https://github.com/tomp/starting-ragchatbot-codebase.git)
+  ⎿  (No content)
+
+● Bash(git remote -v)
+  ⎿ origin      https://github.com/tomp/starting-ragchatbot-codebase.git (fetch)
+    origin      https://github.com/tomp/starting-ragchatbot-codebase.git (push)
+    upstream    https://github.com/https-deeplearning-ai/starting-ragchatbot-c
+    … +3 lines (ctrl+o to expand)
+
+
+
+
+● Now let's try pushing again with HTTPS authentication.
+
+● Bash(git push origin main)
+  ⎿  Error: Exit code 128
+     fatal: could not read Username for 'https://github.com': No such device or 
+     address
+
+● Let me configure git to use the GitHub CLI for authentication, which will use
+  your existing token.
+
+● Bash(gh auth setup-git)
+  ⎿  (No content)
+
+● Bash(git push origin main)
+  ⎿  To https://github.com/tomp/starting-ragchatbot-codebase.git
+        afe4036..5c9f5f5  main -> main
+
+● Perfect! Your changes have been successfully pushed to your fork! 🎉
+
+● Bash(git log --oneline -3)
+  ⎿  5c9f5f5 add documentation for codebase architecture and query flow
+     afe4036 updated lab files
+     5d515fb added lab files
+
+● Summary
+
+  ✅ Successfully forked and pushed!
+
+  Here's what was done:
+
+  1. Forked the repository to your GitHub account:
+    - Original:
+  https://github.com/https-deeplearning-ai/starting-ragchatbot-codebase
+    - Your fork: https://github.com/tomp/starting-ragchatbot-codebase
+  2. Updated git remotes:
+    - origin → Your fork (where you push changes)
+    - upstream → Original DeepLearning.AI repo (to pull updates)
+  3. Configured authentication using GitHub CLI
+  4. Pushed your commit (5c9f5f5):
+    - Added CLAUDE.md with comprehensive architecture documentation
+    - Added query_flow_diagram.md with visual flow diagrams
+    - Total: 853 lines of documentation
+
+  Your changes are now live at:
+  https://github.com/tomp/starting-ragchatbot-codebase
+
+  You can view your repository and the new documentation files on GitHub! If you
+   want to pull updates from the original DeepLearning.AI repo in the future,
+  you can use:
+  git fetch upstream
+  git merge upstream/main
+
+✻ Cooked for 1m 22s
+╭─── Claude Code v2.1.19 ──────────────────────────────────────────────────────╮
+│                             │ Tips for getting started                       │
+│        Welcome back!        │ ✔ Run /init to create a CLAUDE.md file with i… │
+│                             │ ────────────────────────────────────────────── │
+│           ▐▛███▜▌           │ Recent activity                                │
+│          ▝▜█████▛▘          │ 3d ago  give me an overview of the codebase    │
+│            ▘▘ ▝▝            │ 3d ago  give me an overview of the codebase    │
+│                             │ 3d ago  give me an overview of the codebase    │
+│   Sonnet 4.5 · Claude API   │ /resume for more                               │
+│        ~/…/example_2        │                                                │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+❯ give me an overview of the codebase 
+
+● I'll explore the codebase to give you a comprehensive overview.
+
+● Explore(Explore codebase structure)
+  ⎿  Done (25 tool uses · 40.3k tokens · 49s)
+
+● Codebase Overview
+
+  This is a Course Materials RAG System - an educational Q&A application that
+  uses Retrieval-Augmented Generation to answer questions about course content.
+
+  Architecture
+
+  Backend (FastAPI + Python 3.13)
+  - app.py - Main API server with /api/query and /api/courses endpoints
+  - rag_system.py - Orchestrates the RAG pipeline
+  - vector_store.py - ChromaDB wrapper for semantic search
+  - ai_generator.py - Anthropic Claude API integration with tool use
+  - document_processor.py - Parses course files and creates chunks
+  - search_tools.py - Tool definitions for Claude to search course content
+  - session_manager.py - Manages conversation history per session
+
+  Frontend (HTML/CSS/JavaScript)
+  - index.html - Chat interface with sidebar
+  - style.css - Dark theme styling
+  - script.js - Client-side chat logic and API calls
+
+  Sample Data
+  - docs/ - Contains 4 course transcript files (course1-4_script.txt)
+
+  How It Works
+
+  1. Document Processing: Loads course files from docs/, extracts metadata
+  (titles, instructors, lessons), and chunks content into ~800 character
+  segments with overlap
+  2. Vector Storage: Stores chunks in ChromaDB using Sentence Transformers
+  embeddings (all-MiniLM-L6-v2 model)
+  3. Query Processing: User asks questions via web UI → FastAPI endpoint → RAG
+  system
+  4. Tool-Based Search: Claude decides when to call the CourseSearchTool to
+  retrieve relevant content
+  5. Response Generation: Claude synthesizes answers from search results with
+  source citations
+  6. Session Management: Maintains conversation history (last 2 exchanges) per
+  session
+
+  Key Features
+
+  - Semantic search across course content and lesson-specific filtering
+  - Course name fuzzy matching via vector similarity
+  - Claude tool use for controlled, fact-based responses
+  - Session-based conversation context
+  - Modern chat UI with suggested questions and course statistics
+  - Markdown rendering for formatted responses
+
+  Tech Stack
+
+  - AI: Anthropic Claude Sonnet 4 (claude-sonnet-4-20250514)
+  - Vector DB: ChromaDB 1.0.15
+  - Embeddings: Sentence Transformers
+  - Web Framework: FastAPI 0.116.1
+  - Package Manager: uv
+
+  Getting Started
+
+  Run ./run.sh which starts the FastAPI server on port 8000. Requires
+  ANTHROPIC_API_KEY in .env file.
+
+✻ Baked for 1m 15s
+
+❯ how are the course materials processed? 
+
+● I'll examine the document processing implementation to show you exactly how
+  course materials are processed.
+
+● Read(backend/document_processor.py)
+  ⎿  Read 260 lines
+
+● Course Materials Processing
+
+  The course materials processing happens in document_processor.py through the
+  DocumentProcessor class. Here's the detailed flow:
+
+  1. File Reading (lines 13-21)
+
+  - Reads files with UTF-8 encoding
+  - Falls back to UTF-8 with error ignoring if normal read fails
+  - Handles encoding issues gracefully
+
+  2. Metadata Extraction (lines 110-146)
+
+  The processor expects a specific format at the top of each course file:
+  Course Title: [title]
+  Course Link: [url]
+  Course Instructor: [name]
+
+  - Line 1: Extracts course title (or uses filename as fallback)
+  - Lines 2-4: Checks first 4 lines for "Course Link:" and "Course Instructor:"
+  patterns using regex
+  - Creates a Course object with this metadata
+
+  3. Lesson Parsing (lines 148-243)
+
+  After metadata (starting from line 4), the processor looks for lesson markers:
+
+  Pattern: Lesson N: Title (e.g., "Lesson 0: Introduction")
+
+  For each lesson:
+  - Extracts lesson number and title using regex: r'^Lesson\s+(\d+):\s*(.+)$'
+  - Checks if next line contains "Lesson Link:" and captures it
+  - Collects all content until the next lesson marker
+  - Creates a Lesson object with metadata
+  - Processes lesson content into chunks
+
+  4. Intelligent Text Chunking (lines 25-91)
+
+  This is the most sophisticated part:
+
+  Step 1: Text Normalization
+  - Normalizes whitespace (removes extra spaces/newlines)
+  - Cleans up the text
+
+  Step 2: Sentence Splitting
+  - Uses smart regex: r'(?<!\w\.\w.)(?<![A-Z][a-z]\.)(?<=\.|\!|\?)\s+(?=[A-Z])'
+  - Handles abbreviations correctly (e.g., "Mr." or "U.S." won't trigger splits)
+  - Splits on periods, exclamation marks, or question marks followed by capital
+  letters
+
+  Step 3: Chunk Building
+  - Configurable chunk size (default: 800 characters)
+  - Builds chunks sentence by sentence
+  - Adds sentences until chunk size would be exceeded
+  - Maintains sentence integrity (never splits mid-sentence)
+
+  Step 4: Overlap Calculation
+  - Configurable overlap (default: 100 characters)
+  - Counts backwards from end of chunk to find overlap sentences
+  - Next chunk starts with overlap sentences from previous chunk
+  - Ensures context continuity between chunks
+
+  5. Context Enrichment (lines 184-189, 232-234)
+
+  The processor adds contextual information to chunks:
+
+  First chunk of each lesson (lines 184-188):
+  "Lesson {N} content: {chunk_text}"
+
+  Last lesson processing (lines 232-234):
+  "Course {title} Lesson {N} content: {chunk_text}"
+
+  This helps the vector search understand which lesson/course each chunk belongs
+   to.
+
+  6. Chunk Creation (lines 190-197)
+
+  Each chunk becomes a CourseChunk object containing:
+  - content - The text chunk (with context)
+  - course_title - Parent course
+  - lesson_number - Parent lesson
+  - chunk_index - Sequential position in document
+
+  7. Fallback Handling (lines 245-257)
+
+  If no lesson markers are found:
+  - Treats entire document (after metadata) as one course
+  - Chunks the full content
+  - Still creates CourseChunk objects with course_title
+
+  Example Processing Flow
+
+  Given a file like:
+  Course Title: Introduction to RAG
+  Course Link: https://example.com
+  Course Instructor: Andrew Ng
+
+  Lesson 0: What is RAG?
+  RAG stands for Retrieval-Augmented Generation...
+
+  Lesson 1: Vector Databases
+  Vector databases store embeddings...
+
+  The processor:
+  1. Extracts: title="Introduction to RAG", link, instructor="Andrew Ng"
+  2. Finds Lesson 0, collects its content
+  3. Chunks Lesson 0 content into ~800 char pieces with 100 char overlap
+  4. Adds "Lesson 0 content:" prefix to first chunk
+  5. Repeats for Lesson 1
+  6. Returns Course object + list of CourseChunk objects
+
+  Key Configuration (from config.py)
+
+  - CHUNK_SIZE = 800 - Maximum characters per chunk
+  - CHUNK_OVERLAP = 100 - Character overlap between chunks
+
+  This creates a rich, structured representation optimized for semantic search
+  with proper context preservation.
+
+❯ trace the process of handling a user's query from frontend to backend 
+
+● I'll trace the complete query flow from frontend to backend by examining the
+  relevant files.
+
+● Read(frontend/script.js)
+  ⎿  Read 191 lines
+
+● Read(backend/app.py)
+  ⎿  Read 119 lines
+
+● Read(backend/rag_system.py)
+  ⎿  Read 147 lines
+
+● Read(backend/ai_generator.py)
+  ⎿  Read 135 lines
+
+● Read(backend/search_tools.py)
+  ⎿  Read 154 lines
+
+● Read(backend/vector_store.py)
+  ⎿  Read 267 lines
+
+● Read(backend/session_manager.py)
+  ⎿  Read 61 lines
+
+● Now I'll create a comprehensive trace of the query flow from frontend to
+  backend and back.
+
+  Complete Query Flow Trace
+
+  Here's the step-by-step journey of a user query through the system:
+
+  FRONTEND: User Sends Query
+
+  1. User Input (script.js:45-96)
+  - User types query in chatInput field or clicks suggested question
+  - Presses Enter or clicks Send button
+  - sendMessage() function triggered
+
+  2. Build API Request (script.js:63-72)
+  fetch(`${API_URL}/query`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+          query: query,
+          session_id: currentSessionId  // null for first query
+      })
+  })
+
+  3. Display Loading State (script.js:54-60)
+  - Adds user message to chat UI
+  - Shows animated loading indicator (3 dots)
+  - Disables input controls
+
+  ---
+  BACKEND: API Endpoint Receives Request
+
+  4. FastAPI Route Handler (app.py:56-74)
+  @app.post("/api/query")
+  async def query_documents(request: QueryRequest):
+      # Create session if not provided
+      session_id = request.session_id
+      if not session_id:
+          session_id = rag_system.session_manager.create_session()
+
+      # Process query using RAG system
+      answer, sources = rag_system.query(request.query, session_id)
+
+      return QueryResponse(answer, sources, session_id)
+
+  ---
+  BACKEND: RAG System Orchestration
+
+  5. RAG System Query Method (rag_system.py:102-140)
+
+  Step 5a: Build Prompt
+  prompt = f"Answer this question about course materials: {query}"
+
+  Step 5b: Get Conversation History (rag_system.py:117-119)
+  history = self.session_manager.get_conversation_history(session_id)
+  # Returns formatted string: "User: previous question\nAssistant: previous 
+  answer..."
+
+  Step 5c: Call AI Generator (rag_system.py:122-127)
+  response = self.ai_generator.generate_response(
+      query=prompt,
+      conversation_history=history,
+      tools=self.tool_manager.get_tool_definitions(),
+      tool_manager=self.tool_manager
+  )
+
+  ---
+  BACKEND: AI Generation with Claude
+
+  6. AI Generator Prepares Claude API Call (ai_generator.py:43-80)
+
+  Step 6a: Build System Prompt (ai_generator.py:61-65)
+  system_content = (
+      f"{SYSTEM_PROMPT}\n\nPrevious conversation:\n{conversation_history}"
+      if conversation_history else SYSTEM_PROMPT
+  )
+  System prompt instructs Claude to:
+  - Use search tool for course-specific questions
+  - Answer general questions directly
+  - Provide concise, educational responses
+  - No meta-commentary about searching
+
+  Step 6b: Prepare API Parameters (ai_generator.py:68-77)
+  api_params = {
+      "model": "claude-sonnet-4-20250514",
+      "temperature": 0,
+      "max_tokens": 800,
+      "messages": [{"role": "user", "content": query}],
+      "system": system_content,
+      "tools": tools,  # Tool definitions from ToolManager
+      "tool_choice": {"type": "auto"}
+  }
+
+  Step 6c: Call Claude API (ai_generator.py:80)
+  response = self.client.messages.create(**api_params)
+
+  ---
+  BACKEND: Claude Decides to Use Tool
+
+  7. Handle Tool Use (ai_generator.py:83-84)
+
+  Claude's response has stop_reason == "tool_use", indicating it wants to
+  search.
+
+  8. Tool Execution Handler (ai_generator.py:89-135)
+
+  Step 8a: Extract Tool Call (ai_generator.py:108-114)
+  for content_block in initial_response.content:
+      if content_block.type == "tool_use":
+          # content_block contains:
+          # - name: "search_course_content"
+          # - input: {"query": "...", "course_name": "...", "lesson_number": 
+  ...}
+
+  Step 8b: Execute Tool (search_tools.py:135-140)
+  tool_result = tool_manager.execute_tool(
+      content_block.name,  # "search_course_content"
+      **content_block.input  # query, course_name, lesson_number
+  )
+
+  ---
+  BACKEND: Course Search Tool Execution
+
+  9. CourseSearchTool Execute (search_tools.py:52-86)
+
+  def execute(self, query: str, course_name: Optional[str] = None, 
+              lesson_number: Optional[int] = None) -> str:
+      # Call vector store search
+      results = self.store.search(query, course_name, lesson_number)
+
+      # Handle errors or empty results
+      if results.error: return results.error
+      if results.is_empty(): return "No relevant content found..."
+
+      # Format and return results
+      return self._format_results(results)
+
+  ---
+  BACKEND: Vector Store Search
+
+  10. VectorStore Search (vector_store.py:61-100)
+
+  Step 10a: Resolve Course Name (vector_store.py:79-83)
+  If course_name provided (e.g., "Introduction"):
+  course_title = self._resolve_course_name(course_name)
+  # Searches course_catalog collection with vector similarity
+  # Returns exact course title: "Introduction to Retrieval Augmented Generation"
+
+  Step 10b: Build Filter (vector_store.py:86, 118-133)
+  filter_dict = self._build_filter(course_title, lesson_number)
+  # Examples:
+  # {"course_title": "exact_title"}
+  # {"lesson_number": 2}
+  # {"$and": [{"course_title": "..."}, {"lesson_number": 2}]}
+
+  Step 10c: Query ChromaDB (vector_store.py:93-98)
+  results = self.course_content.query(
+      query_texts=[query],         # Converts to embedding
+      n_results=5,                 # Max results (config.MAX_RESULTS)
+      where=filter_dict            # Filters by course/lesson
+  )
+  # ChromaDB:
+  # 1. Converts query to embedding using Sentence Transformers
+  # 2. Performs cosine similarity search against stored chunk embeddings
+  # 3. Applies filters to metadata
+  # 4. Returns top 5 most similar chunks
+
+  Step 10d: Return Results (vector_store.py:98)
+  return SearchResults.from_chroma(results)
+  # SearchResults contains:
+  # - documents: ["chunk text 1", "chunk text 2", ...]
+  # - metadata: [{"course_title": "...", "lesson_number": ...}, ...]
+  # - distances: [0.234, 0.456, ...]  # Similarity scores
+
+  ---
+  BACKEND: Format Search Results
+
+  11. Format Results (search_tools.py:88-114)
+
+  def _format_results(self, results: SearchResults) -> str:
+      formatted = []
+      sources = []
+
+      for doc, meta in zip(results.documents, results.metadata):
+          course_title = meta.get('course_title')
+          lesson_num = meta.get('lesson_number')
+
+          # Build context header
+          header = f"[{course_title} - Lesson {lesson_num}]"
+          sources.append(f"{course_title} - Lesson {lesson_num}")
+
+          formatted.append(f"{header}\n{doc}")
+
+      self.last_sources = sources  # Store for UI display
+
+      return "\n\n".join(formatted)
+
+  Returns formatted string:
+  [Course Title - Lesson 1]
+  Lesson 1 content: RAG stands for Retrieval-Augmented Generation...
+
+  [Course Title - Lesson 2]
+  Lesson 2 content: Vector databases store embeddings...
+
+  ---
+  BACKEND: Claude Synthesizes Final Answer
+
+  12. Tool Results Back to Claude (ai_generator.py:116-124)
+
+  tool_results.append({
+      "type": "tool_result",
+      "tool_use_id": content_block.id,
+      "content": tool_result  # Formatted search results
+  })
+
+  messages.append({"role": "user", "content": tool_results})
+
+  13. Final Claude API Call (ai_generator.py:127-135)
+
+  final_params = {
+      "model": "claude-sonnet-4-20250514",
+      "temperature": 0,
+      "max_tokens": 800,
+      "messages": [
+          {"role": "user", "content": original_query},
+          {"role": "assistant", "content": [tool_use_block]},
+          {"role": "user", "content": [tool_result]}
+      ],
+      "system": system_content
+  }
+
+  final_response = self.client.messages.create(**final_params)
+  return final_response.content[0].text
+
+  Claude now synthesizes an answer based on the search results.
+
+  ---
+  BACKEND: Extract Sources and Update Session
+
+  14. Get Sources from Tool (rag_system.py:130-133)
+  sources = self.tool_manager.get_last_sources()
+  # Returns: ["Course Title - Lesson 1", "Course Title - Lesson 2", ...]
+
+  self.tool_manager.reset_sources()  # Clear for next query
+
+  15. Update Session History (rag_system.py:136-137)
+  self.session_manager.add_exchange(session_id, query, response)
+  Session history now contains:
+  User: What is RAG?
+  Assistant: RAG stands for Retrieval-Augmented Generation...
+
+  16. Return Response (rag_system.py:140)
+  return response, sources
+
+  ---
+  BACKEND: Send Response to Frontend
+
+  17. API Response (app.py:68-72)
+  return QueryResponse(
+      answer=response,
+      sources=sources,
+      session_id=session_id
+  )
+
+  JSON response:
+  {
+      "answer": "RAG stands for Retrieval-Augmented Generation...",
+      "sources": ["Course Title - Lesson 1", "Course Title - Lesson 2"],
+      "session_id": "session_1"
+  }
+
+  ---
+  FRONTEND: Display Response
+
+  18. Handle API Response (script.js:76-85)
+  const data = await response.json();
+
+  // Update session ID if new
+  if (!currentSessionId) {
+      currentSessionId = data.session_id;
+  }
+
+  // Replace loading message with response
+  loadingMessage.remove();
+  addMessage(data.answer, 'assistant', data.sources);
+
+  19. Render Message (script.js:113-138)
+  function addMessage(content, type, sources = null) {
+      // Convert markdown to HTML for assistant messages
+      const displayContent = type === 'assistant'
+          ? marked.parse(content)  // Render markdown
+          : escapeHtml(content);   // Escape user input
+
+      // Add sources collapsible section
+      if (sources && sources.length > 0) {
+          html += `
+              <details class="sources-collapsible">
+                  <summary>Sources</summary>
+                  <div>${sources.join(', ')}</div>
+              </details>
+          `;
+      }
+
+      chatMessages.appendChild(messageDiv);
+      chatMessages.scrollTop = chatMessages.scrollHeight;  // Auto-scroll
+  }
+
+  20. Re-enable Input (script.js:92-95)
+  chatInput.disabled = false;
+  sendButton.disabled = false;
+  chatInput.focus();
+
+  ---
+  Summary Flow Diagram
+
+  [USER TYPES QUERY]
+          ↓
+  [Frontend: script.js - sendMessage()]
+          ↓
+  [HTTP POST /api/query]
+          ↓
+  [Backend: app.py - query_documents()]
+          ↓
+  [RAG System: rag_system.py - query()]
+          ↓
+  [Session Manager: Get conversation history]
+          ↓
+  [AI Generator: ai_generator.py - generate_response()]
+          ↓
+  [Claude API Call #1 with tools]
+          ↓
+  [Claude decides: "I need to search"]
+          ↓
+  [Tool Manager: execute_tool()]
+          ↓
+  [CourseSearchTool: execute()]
+          ↓
+  [Vector Store: search()]
+          ↓
+  [ChromaDB: Vector similarity search]
+          ↓
+  [Return search results to tool]
+          ↓
+  [Format results with sources]
+          ↓
+  [Tool result back to Claude]
+          ↓
+  [Claude API Call #2 - synthesize answer]
+          ↓
+  [Extract sources from tool]
+          ↓
+  [Session Manager: Store exchange]
+          ↓
+  [Return response + sources]
+          ↓
+  [API Response JSON]
+          ↓
+  [Frontend: Display message + sources]
+          ↓
+  [USER SEES ANSWER]
+
+  The entire flow involves 2 Claude API calls, 1 vector search, and maintains
+  conversation context across queries within the same session.
+
+✻ Baked for 1m 24s
+
+❯ draw a diagram that illustrates this flow 
+
+● I'll create a visual diagram illustrating the complete query flow.
+
+● Write(query_flow_diagram.md)
+  ⎿  Error writing file
+
+● Read(query_flow_diagram.md)
+  ⎿  Read 470 lines
+
+● Update(query_flow_diagram.md)
+  ⎿  Added 132 lines
+        1  # User Query Flow Diagram
+        2  
+        3 +## Interactive Sequence Diagram (Mermaid)                     
+        4 +                                                              
+        5 +```mermaid                                                    
+        6 +sequenceDiagram                                               
+        7 +    participant User                                          
+        8 +    participant Frontend as Frontend<br/>(script.js)          
+        9 +    participant API as FastAPI<br/>(app.py)                   
+       10 +    participant RAG as RAG System<br/>(rag_system.py)         
+       11 +    participant Session as Session Manager<br/>(session_manage
+          +r.py)                                                         
+       12 +    participant AI as AI Generator<br/>(ai_generator.py)      
+       13 +    participant Claude as Claude API<br/>(Anthropic)          
+       14 +    participant Tools as Tool Manager<br/>(search_tools.py)   
+       15 +    participant Vector as Vector Store<br/>(vector_store.py)  
+       16 +    participant Chroma as ChromaDB<br/>(Database)             
+       17 +                                                              
+       18 +    Note over User,Chroma: USER SENDS QUERY                   
+       19 +                                                              
+       20 +    User->>Frontend: Types query & clicks Send                
+       21 +    activate Frontend                                         
+       22 +    Frontend->>Frontend: Disable input, show loading          
+       23 +    Frontend->>Frontend: Add user message to chat             
+       24 +                                                              
+       25 +    Frontend->>API: POST /api/query<br/>{query, session_id}   
+       26 +    activate API                                              
+       27 +                                                              
+       28 +    Note over API,RAG: BACKEND PROCESSING                     
+       29 +                                                              
+       30 +    API->>RAG: query(query, session_id)                       
+       31 +    activate RAG                                              
+       32 +                                                              
+       33 +    RAG->>Session: get_conversation_history(session_id)       
+       34 +    activate Session                                          
+       35 +    Session-->>RAG: Previous conversation context             
+       36 +    deactivate Session                                        
+       37 +                                                              
+       38 +    RAG->>Tools: get_tool_definitions()                       
+       39 +    activate Tools                                            
+       40 +    Tools-->>RAG: [CourseSearchTool definition]               
+       41 +    deactivate Tools                                          
+       42 +                                                              
+       43 +    Note over RAG,Claude: AI GENERATION - FIRST CALL          
+       44 +                                                              
+       45 +    RAG->>AI: generate_response(query, history, tools)        
+       46 +    activate AI                                               
+       47 +                                                              
+       48 +    AI->>AI: Build system prompt with history                 
+       49 +    AI->>Claude: messages.create()<br/>with tools & query     
+       50 +    activate Claude                                           
+       51 +                                                              
+       52 +    Note over Claude: Claude analyzes query<br/>Decides to use
+          + search tool                                                  
+       53 +                                                              
+       54 +    Claude-->>AI: Response: tool_use<br/>{name: "search_course
+          +_content",<br/>input: {query, course_name, lesson_number}}    
+       55 +    deactivate Claude                                         
+       56 +                                                              
+       57 +    Note over AI,Chroma: TOOL EXECUTION PHASE                 
+       58 +                                                              
+       59 +    AI->>Tools: execute_tool("search_course_content", params) 
+       60 +    activate Tools                                            
+       61 +                                                              
+       62 +    Tools->>Vector: search(query, course_name, lesson_number) 
+       63 +    activate Vector                                           
+       64 +                                                              
+       65 +    alt Course name provided                                  
+       66 +        Vector->>Chroma: Query course_catalog<br/>(semantic co
+          +urse name matching)                                           
+       67 +        activate Chroma                                       
+       68 +        Chroma-->>Vector: Exact course title                  
+       69 +        deactivate Chroma                                     
+       70 +        Vector->>Vector: Build filter dict                    
+       71 +    end                                                       
+       72 +                                                              
+       73 +    Vector->>Chroma: Query course_content<br/>(vector similari
+          +ty search)                                                    
+       74 +    activate Chroma                                           
+       75 +    Note over Chroma: 1. Convert query to embedding<br/>2. Cos
+          +ine similarity search<br/>3. Apply filters<br/>4. Return top 5
+          + chunks                                                       
+       76 +    Chroma-->>Vector: Search results<br/>{documents, metadata,
+          + distances}                                                   
+       77 +    deactivate Chroma                                         
+       78 +                                                              
+       79 +    Vector-->>Tools: SearchResults object                     
+       80 +    deactivate Vector                                         
+       81 +                                                              
+       82 +    Tools->>Tools: Format results with headers<br/>Store sourc
+          +es for UI                                                     
+       83 +    Tools-->>AI: Formatted search results string              
+       84 +    deactivate Tools                                          
+       85 +                                                              
+       86 +    Note over AI,Claude: AI GENERATION - SECOND CALL          
+       87 +                                                              
+       88 +    AI->>AI: Build messages with tool results                 
+       89 +    AI->>Claude: messages.create()<br/>(query + tool_use + too
+          +l_result)                                                     
+       90 +    activate Claude                                           
+       91 +                                                              
+       92 +    Note over Claude: Claude synthesizes answer<br/>from searc
+          +h results                                                     
+       93 +                                                              
+       94 +    Claude-->>AI: Final response text                         
+       95 +    deactivate Claude                                         
+       96 +                                                              
+       97 +    AI-->>RAG: Generated answer                               
+       98 +    deactivate AI                                             
+       99 +                                                              
+      100 +    Note over RAG,Session: POST-PROCESSING                    
+      101 +                                                              
+      102 +    RAG->>Tools: get_last_sources()                           
+      103 +    activate Tools                                            
+      104 +    Tools-->>RAG: ["Course - Lesson 1", "Course - Lesson 2"]  
+      105 +    deactivate Tools                                          
+      106 +                                                              
+      107 +    RAG->>Tools: reset_sources()                              
+      108 +    activate Tools                                            
+      109 +    deactivate Tools                                          
+      110 +                                                              
+      111 +    RAG->>Session: add_exchange(session_id, query, response)  
+      112 +    activate Session                                          
+      113 +    Note over Session: Store in session history<br/>(max 2 exc
+          +hanges = 4 messages)                                          
+      114 +    deactivate Session                                        
+      115 +                                                              
+      116 +    RAG-->>API: (answer, sources)                             
+      117 +    deactivate RAG                                            
+      118 +                                                              
+      119 +    API-->>Frontend: JSON Response<br/>{answer, sources, sessi
+          +on_id}                                                        
+      120 +    deactivate API                                            
+      121 +                                                              
+      122 +    Note over Frontend,User: DISPLAY RESPONSE                 
+      123 +                                                              
+      124 +    Frontend->>Frontend: Remove loading indicator             
+      125 +    Frontend->>Frontend: Render markdown answer               
+      126 +    Frontend->>Frontend: Add sources collapsible              
+      127 +    Frontend->>Frontend: Enable input, auto-scroll            
+      128 +                                                              
+      129 +    Frontend-->>User: Display answer with sources             
+      130 +    deactivate Frontend                                       
+      131 +                                                              
+      132 +    Note over User: User sees answer                          
+      133 +```                                                           
+      134 +                                                              
+      135  ## Complete Flow: Frontend → Backend → AI → Response
+      136  
+      137  ```
+
+● I've created a comprehensive flow diagram that illustrates the complete query
+  processing flow. The diagram is saved at:
+
+  query_flow_diagram.md
+
+  How to View the Diagram
+
+  The file contains two visualizations:
+
+  1. Mermaid Sequence Diagram (Top)
+
+  This is an interactive sequence diagram showing the flow between all
+  components. You can view it in:
+  - GitHub: Just open the file on GitHub - it renders Mermaid automatically
+  - VS Code: Install the "Markdown Preview Mermaid Support" extension
+  - Mermaid Live Editor: Copy the mermaid code block and paste at
+  https://mermaid.live
+  - Many markdown viewers support Mermaid natively
+
+  2. Text-Based ASCII Diagram (Below)
+
+  A detailed ASCII art flowchart that works in any text editor
+
+  What the Diagram Shows
+
+  The sequence diagram traces 22 steps across 9 components:
+
+  1. User → Frontend interaction
+  2. Frontend (script.js) → HTTP request
+  3. FastAPI (app.py) → Endpoint handler
+  4. RAG System (rag_system.py) → Orchestration
+  5. Session Manager → Conversation history
+  6. AI Generator → Claude API calls (2 calls)
+  7. Claude API → Tool use decision + synthesis
+  8. Tool Manager → Execute search
+  9. Vector Store → ChromaDB queries
+  10. ChromaDB → Vector similarity search
+
+  Key Highlights
+
+  - Two Claude API calls: First to decide tool use, second to synthesize answer
+  - Vector search flow: Course name resolution → content search → result
+  formatting
+  - Session management: Conversation context preservation
+  - Source tracking: Sources extracted from search results for UI display
+  - End-to-end timing: ~1.5-2.8 seconds total
+
+  The diagram clearly shows the activation/deactivation of each component and
+  the data flow between them, making it easy to understand how a simple user
+  query triggers this sophisticated RAG pipeline.
+
+✻ Brewed for 1m 34s
+
+❯ how do I run this application? 
+
+● I'll check the startup script and configuration to show you how to run the
+  application.
+
+● Read(run.sh)
+  ⎿  Read 16 lines
+
+● Read(.env.example)
+  ⎿  Read 2 lines
+
+● Read(backend/config.py)
+  ⎿  Read 30 lines
+
+● Bash(ls -la /home/pollard/claude-stuff/deeplearning_ai-claude-code-a-highly-ag
+      entic-coding-assistant/example_2/ | grep -E
+      "(\.env|\.python-version|pyproject)")
+  ⎿  -rw-r--r-- 1 pollard users    129 Jan 27 21:00 .env
+     -rw-r--r-- 1 pollard users     98 Jan 24 18:52 .env.example
+     -rw-r--r-- 1 pollard users    356 Jan 24 18:52 pyproject.toml
+     -rw-r--r-- 1 pollard users      5 Jan 24 18:52 .python-version
+
+● Bash(grep -q "sk-" /home/pollard/claude-stuff/deeplearning_ai-claude-code-a-hi
+      ghly-agentic-coding-assistant/example_2/.env && echo "API key appears to
+      be set" || ech…)
+  ⎿  API key appears to be set
+
+● Bash(python3 --version && echo "---" && which uv && uv --version)
+  ⎿  Python 3.14.2
+     ---
+     /home/pollard/.cargo/bin/uv
+     uv 0.8.4
+
+● Great! Your environment is already set up. Here's how to run the application:
+
+  Quick Start
+
+  Since you already have the API key configured and dependencies ready, simply
+  run:
+
+  ./run.sh
+
+  This will:
+  1. Create the docs/ directory if needed
+  2. Start the FastAPI server on port 8000
+  3. Load course materials from the docs/ folder
+  4. Serve the frontend at http://localhost:8000
+
+  Detailed Steps
+
+  1. Make the script executable (if needed):
+  chmod +x run.sh
+
+  2. Run the application:
+  ./run.sh
+
+  3. Access the application:
+  Open your browser and go to:
+  http://localhost:8000
+
+  What Happens on Startup
+
+  The application will:
+  - Start the FastAPI server with auto-reload enabled
+  - Process all .txt, .pdf, and .docx files in the docs/ folder
+  - Create ChromaDB vector embeddings (stored in backend/chroma_db/)
+  - Show output like:
+  Starting Course Materials RAG System...
+  Make sure you have set your ANTHROPIC_API_KEY in .env
+  Loading initial documents...
+  Loaded 4 courses with 156 chunks
+  INFO: Uvicorn running on http://127.0.0.1:8000
+
+  Environment Verification
+
+  Your system is ready:
+  - ✅ Python 3.14.2 installed (requires Python ≥3.13)
+  - ✅ uv package manager installed (v0.8.4)
+  - ✅ .env file exists with API key configured
+  - ✅ Course materials in docs/ folder (4 files)
+
+  Alternative: Manual Start
+
+  If you prefer to run commands manually:
+
+  cd backend
+  uv run uvicorn app:app --reload --port 8000
+
+  First Time Setup (Already Done for You)
+
+  These steps are already complete, but for reference:
+
+  1. Create .env file (✅ Already exists)
+  cp .env.example .env
+  # Edit .env and add your ANTHROPIC_API_KEY
+  2. Install dependencies (✅ Handled by uv run)
+  cd backend
+  uv sync
+
+  Stopping the Server
+
+  Press Ctrl+C in the terminal to stop the server.
+
+  Testing the Application
+
+  Once running, you can:
+  1. Open http://localhost:8000 in your browser
+  2. Try suggested questions in the sidebar
+  3. Ask questions about the course materials
+  4. Check the "Sources" section in responses to see where information came from
+
+  Let me know if you encounter any issues when running it!
+
+✻ Brewed for 45s
+
+❯ /init 
+
+● I'll analyze the codebase and create a comprehensive CLAUDE.md file for future
+   Claude Code instances.
+
+● Read(README.md)
+  ⎿  Read 57 lines
+
+● Search(pattern: "**/.cursor/**")
+  ⎿  Found 0 files
+
+● Search(pattern: "**/.cursorrules")
+  ⎿  Found 0 files
+
+● Search(pattern: "**/.github/copilot-instructions.md")
+  ⎿  Found 0 files
+
+● Read(pyproject.toml)
+  ⎿  Read 16 lines
+
+● Search(pattern: "CLAUDE.md")
+  ⎿  Found 0 files
+
+● Now I'll create a comprehensive CLAUDE.md file based on my analysis of the
+  codebase.
+
+● Write(CLAUDE.md)
+  ⎿  Wrote 246 lines to CLAUDE.md
+       1 # CLAUDE.md
+       2 
+       3 This file provides guidance to Claude Code (claude.ai/code) when
+          working with code in this repository.
+       4 
+       5 ## Project Overview
+       6 
+       7 This is a **Retrieval-Augmented Generation (RAG) system** for ed
+         ucational course materials. It combines ChromaDB vector search w
+         ith Anthropic's Claude API using a tool-based architecture where
+          Claude decides when to search course content.
+       8 
+       9 **Key Architecture Pattern**: Tool-based RAG with two-phase AI g
+         eneration:
+      10 1. Claude receives user query and decides whether to use the sea
+         rch tool
+     … +236 lines (ctrl+o to expand)
+
+● I've created a comprehensive CLAUDE.md file for the repository. Here's what it
+   includes:
+
+  Key Sections
+
+  1. Project Overview - High-level description of the tool-based RAG
+  architecture
+  2. Development Commands - Essential commands for:
+    - Running the application
+    - Managing dependencies with uv
+    - Environment setup
+    - Clearing the vector database
+  3. Architecture Deep Dive - The most important section:
+    - Complete request flow with 11 detailed steps from user input to response
+    - Why two Claude API calls are necessary
+    - Exact file locations and line numbers for key decision points
+  4. Component Responsibilities - Explains the role and critical logic of each
+  major file:
+    - rag_system.py - Orchestrator with no business logic
+    - ai_generator.py - Tool execution loop pattern
+    - search_tools.py - Tool abstraction layer
+    - vector_store.py - Dual collection strategy
+    - document_processor.py - Context-preserving chunking
+    - session_manager.py - Conversation context
+  5. Data Flow Patterns - Code examples showing:
+    - Course loading pipeline
+    - Vector search with filtering
+    - Tool source tracking mechanism
+  6. Configuration - All settings with their defaults and purposes
+  7. Common Modification Patterns - How to:
+    - Add new tools
+    - Change search behavior
+    - Modify AI behavior
+    - Adjust document processing
+  8. Critical Implementation Details - Explains the "why" behind:
+    - Two API calls pattern
+    - Dual ChromaDB collections
+    - Session history as string vs. messages
+    - Source tracking in tools
+
+  The document focuses on the non-obvious architectural patterns that require
+  reading multiple files to understand, like the two-phase Claude API call
+  pattern, the dual collection strategy in ChromaDB, and how sources flow from
+  search tools to the UI.
+
+✻ Brewed for 1m 42s
+
+❯ # always use uv to manage the virtual environment for this project 
+
+● I'll add this important note to the CLAUDE.md file in a prominent location.
+
+● Update(CLAUDE.md)
+  ⎿  Added 4 lines
+      11  2. If search is needed, tool executes and returns formatted res
+          ults
+      12  3. Claude synthesizes final answer from search results
+      13  
+      14 +## Important: Virtual Environment Management                   
+      15 +                                                               
+      16 +**Always use `uv` to manage the virtual environment for this pr
+         +oject.** Do not use `pip`, `venv`, `virtualenv`, or other Pytho
+         +n package managers. All dependency management and Python execut
+         +ion should go through `uv`.                                    
+      17 +                                                               
+      18  ## Development Commands
+      19  
+      20  ### Running the Application
+
+● Update(CLAUDE.md)
+  ⎿  Added 3 lines
+      27  ```bash
+      28  uv sync                                     # Install/update de
+          pendencies
+      29  uv add <package>                            # Add new dependenc
+          y
+      30 +uv run <command>                            # Run any Python co
+         +mmand in managed environment                                   
+      31  ```
+      32  
+      33 +**Note**: Never use `pip install` or create manual virtual envi
+         +ronments. Use `uv` for all operations.                         
+      34 +                                                               
+      35  ### Environment Setup
+      36  ```bash
+      37  cp .env.example .env                        # Create environmen
+          t file
+
+● Done! I've updated the CLAUDE.md file to prominently emphasize that uv should
+  always be used for virtual environment management:
+
+  1. Added a dedicated section right after "Project Overview" titled "Important:
+   Virtual Environment Management" that explicitly states to always use uv and
+  not pip, venv, virtualenv, or other package managers.
+  2. Enhanced the Dependency Management section with:
+    - An additional example: uv run <command> for running Python commands
+    - A clear note: "Never use pip install or create manual virtual
+  environments"
+
+  This ensures future Claude Code instances will immediately understand that all
+   Python operations in this project must go through uv.
+
+❯ /help 
+  ⎿  Help dialog dismissed
+
+❯ add and commit the changes we made to this project 
+
+● I'll add and commit the changes to the repository following git best
+  practices.
+
+● Bash(git status)
+  ⎿  On branch main
+     Your branch is up to date with 'origin/main'.
+     … +7 lines (ctrl+o to expand)
+
+● Bash(git diff query_flow_diagram.md)
+  ⎿  (No content)
+
+● Bash(git log --oneline -5)
+  ⎿  afe4036 updated lab files
+     5d515fb added lab files
+
+● Bash(git add CLAUDE.md query_flow_diagram.md)
+  ⎿  (No content)
+
+● Bash(git commit -m "add documentation for codebase architecture and query
+      flow…)
+  ⎿ [main 5c9f5f5] add documentation for codebase architecture and query fl
+    ow
+     2 files changed, 853 insertions(+)
+    … +2 lines (ctrl+o to expand)
+
+
+● Bash(git status)
+  ⎿  On branch main
+     Your branch is ahead of 'origin/main' by 1 commit.
+       (use "git push" to publish your local commits)
+     … +2 lines (ctrl+o to expand)
+
+● Perfect! I've successfully committed the changes to the repository.
+
+  Commit Summary
+
+  Commit: 5c9f5f5
+  Files added: 2
+  - CLAUDE.md - Comprehensive documentation for Claude Code instances
+  - query_flow_diagram.md - Visual query flow diagrams (Mermaid + ASCII)
+
+  Changes: 853 lines added
+
+  The commit includes:
+  1. CLAUDE.md - Complete architectural documentation covering:
+    - Development commands with uv virtual environment management
+    - 11-step request flow architecture deep dive
+    - Component responsibilities and data flow patterns
+    - Common modification patterns
+    - Critical implementation details explaining design decisions
+  2. query_flow_diagram.md - Visual representations showing:
+    - Interactive Mermaid sequence diagram with 9 components
+    - Detailed ASCII flowchart with 22 steps
+    - Data structures at each stage
+    - Timeline and performance characteristics
+
+  The repository is now ready with comprehensive documentation for future
+  development work. Your branch is ahead of origin/main by 1 commit and ready to
+   push when needed.
+
+✻ Crunched for 37s
+
+! cat .git/config 
+  ⎿  [core]
+        repositoryformatversion = 0
+        filemode = true
+        bare = false
+        logallrefupdates = true
+     [remote "origin"]
+        url =
+     https://github.com/https-deeplearning-ai/starting-ragchatbot-codebase.git
+        fetch = +refs/heads/*:refs/remotes/origin/*
+     [branch "main"]
+        remote = origin
+        merge = refs/heads/main
+
+❯ /? 
+
+● I see you're checking the git remote configuration. Your repository is
+  currently set up to push to:
+
+  https://github.com/https-deeplearning-ai/starting-ragchatbot-codebase.git
+
+  If you want to push the commit we just made to the remote repository, you can
+  run:
+
+  git push origin main
+
+  However, since this appears to be a DeepLearning.AI course repository, you may
+   want to consider:
+
+  1. If you have write access to this repo, you can push directly
+  2. If this is a shared course repo, you might want to fork it first and push
+  to your own fork
+  3. If you want to keep your changes local, you can leave it as is
+
+  Would you like me to help you push the changes, or would you prefer to set up
+  a different remote (like your own fork)?
+
+❯ please help me fork the DeepLearning.ai repo and push the changes to my   
+  fork                                                                      
+
+● I'll help you fork the repository and push your changes to your own fork. Let
+  me first check if you have the GitHub CLI installed, which makes this easier.
+
+● Bash(which gh && gh --version)
+  ⎿  /sbin/gh
+     gh version 2.86.0 (2026-01-21)
+     https://github.com/cli/cli/releases/tag/v2.86.0
+
+● Perfect! You have the GitHub CLI installed. I'll help you fork the repo and
+  push your changes.
+
+● Bash(gh auth status)
+  ⎿  Error: Exit code 1
+     github.com
+       ✓ Logged in to github.com account tomp (GITHUB_TOKEN)
+       - Active account: true
+       - Git operations protocol: ssh
+       - Token: ghp_************************************
+       - Token scopes: 'admin:enterprise', 'admin:gpg_key', 'admin:org', 
+     'admin:public_key', 'admin:repo_hook', 'admin:ssh_signing_key', 'audit_log'
+      'codespace', 'copilot', 'delete:packages', 'delete_repo', 'gist', 
+     'notifications', 'project', 'repo', 'user', 'workflow', 'write:discussion',
+     'write:network_configurations', 'write:packages'
+
+       X Failed to log in to github.com account tomp (keyring)
+       - Active account: false
+     … +3 lines (ctrl+o to see all)
+
+● Great! You're logged in to GitHub as "tomp". Now I'll fork the repository for
+  you. This will:
+  1. Create a fork under your GitHub account (tomp)
+  2. Update the remote to point to your fork
+  3. Keep the original repo as an "upstream" remote
+
+● Bash(gh repo fork --remote=true)
+  ⎿  https://github.com/tomp/starting-ragchatbot-codebase
+
+● Excellent! Your fork has been created at:
+  https://github.com/tomp/starting-ragchatbot-codebase
+
+  Let me verify the remote configuration and then push your changes.
+
+● Bash(git remote -v)
+  ⎿  origin     git@github.com:tomp/starting-ragchatbot-codebase.git (fetch)
+     origin     git@github.com:tomp/starting-ragchatbot-codebase.git (push)
+     upstream   https://github.com/https-deeplearning-ai/starting-ragchatbot
+     -c
+     … +3 lines (ctrl+o to expand)
+
+● Perfect! The remotes have been configured:
+  - origin → Your fork: git@github.com:tomp/starting-ragchatbot-codebase.git
+  - upstream → Original repo:
+  https://github.com/https-deeplearning-ai/starting-ragchatbot-codebase.git
+
+  Now I'll push your commit to your fork.
+
+● Bash(git push origin main)
+  ⎿  Error: Exit code 128
+     git@github.com: Permission denied (publickey).
+     fatal: Could not read from remote repository.
+
+     Please make sure you have the correct access rights
+     and the repository exists.
+
+● There's an SSH key authentication issue. Let me switch the remote to use HTTPS
+   instead, which will work with your GitHub token.
+
+● Bash(git remote set-url origin
+      https://github.com/tomp/starting-ragchatbot-codebase.git)
+  ⎿  (No content)
+
+● Bash(git remote -v)
+  ⎿ origin      https://github.com/tomp/starting-ragchatbot-codebase.git (fetch)
+    origin      https://github.com/tomp/starting-ragchatbot-codebase.git (push)
+    upstream    https://github.com/https-deeplearning-ai/starting-ragchatbot-c
+    … +3 lines (ctrl+o to expand)
+
+
+
+
+● Now let's try pushing again with HTTPS authentication.
+
+● Bash(git push origin main)
+  ⎿  Error: Exit code 128
+     fatal: could not read Username for 'https://github.com': No such device or 
+     address
+
+● Let me configure git to use the GitHub CLI for authentication, which will use
+  your existing token.
+
+● Bash(gh auth setup-git)
+  ⎿  (No content)
+
+● Bash(git push origin main)
+  ⎿  To https://github.com/tomp/starting-ragchatbot-codebase.git
+        afe4036..5c9f5f5  main -> main
+
+● Perfect! Your changes have been successfully pushed to your fork! 🎉
+
+● Bash(git log --oneline -3)
+  ⎿  5c9f5f5 add documentation for codebase architecture and query flow
+     afe4036 updated lab files
+     5d515fb added lab files
+
+● Summary
+
+  ✅ Successfully forked and pushed!
+
+  Here's what was done:
+
+  1. Forked the repository to your GitHub account:
+    - Original:
+  https://github.com/https-deeplearning-ai/starting-ragchatbot-codebase
+    - Your fork: https://github.com/tomp/starting-ragchatbot-codebase
+  2. Updated git remotes:
+    - origin → Your fork (where you push changes)
+    - upstream → Original DeepLearning.AI repo (to pull updates)
+  3. Configured authentication using GitHub CLI
+  4. Pushed your commit (5c9f5f5):
+    - Added CLAUDE.md with comprehensive architecture documentation
+    - Added query_flow_diagram.md with visual flow diagrams
+    - Total: 853 lines of documentation
+
+  Your changes are now live at:
+  https://github.com/tomp/starting-ragchatbot-codebase
+
+  You can view your repository and the new documentation files on GitHub! If you
+   want to pull updates from the original DeepLearning.AI repo in the future,
+  you can use:
+  git fetch upstream
+  git merge upstream/main
+
+✻ Cooked for 1m 22s
