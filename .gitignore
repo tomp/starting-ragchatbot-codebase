@@ -8,11 +8,14 @@ __pycache__/
 *$py.class
 *.so
 .Python
+.mypy_cache/
+.pytest_cache/
 
 # Virtual environments
 venv/
 env/
 ENV/
+.venv/
 
 # ChromaDB
 backend/chroma_db/

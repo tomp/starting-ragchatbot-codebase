@@ -54,3 +54,28 @@ The application will be available at:
 - Web Interface: `http://localhost:8000`
 - API Documentation: `http://localhost:8000/docs`
 
+## Development
+
+### Code Quality Tools
+
+This project uses several code quality tools to maintain consistent code formatting and catch potential issues. See [CODE_QUALITY.md](CODE_QUALITY.md) for detailed documentation.
+
+**Quick commands:**
+```bash
+# Format code with Black and isort
+./scripts/format.sh
+
+# Run linting checks (Flake8, mypy)
+./scripts/lint.sh
+
+# Run all quality checks including tests
+./scripts/quality-check.sh
+```
+
+### Running Tests
+
+```bash
+cd backend
+uv run pytest tests/ --cov=. --cov-report=term-missing
+```
+
