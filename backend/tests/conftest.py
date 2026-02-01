@@ -1,6 +1,7 @@
 import pytest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch, MagicMock
 from typing import List, Dict, Any
+from fastapi.testclient import TestClient
 from vector_store import SearchResults
 from models import Course, CourseChunk, SourceCitation
 
@@ -150,5 +151,144 @@ def sample_course_chunks(sample_course: Course) -> List[CourseChunk]:
             course_title=sample_course.title,
             lesson_number=1,
             chunk_index=1
+        )
+    ]
+
+
+# API Testing Fixtures
+
+@pytest.fixture
+def mock_rag_system() -> Mock:
+    """Mock RAGSystem for API testing."""
+    mock = Mock()
+
+    # Mock query method
+    mock.query.return_value = (
+        "MCP is a protocol for connecting AI assistants to external data sources.",
+        [
+            SourceCitation(
+                text="Introduction to Model Context Protocol - Lesson 1",
+                url="https://example.com/mcp-course/lesson-1"
+            )
+        ]
+    )
+
+    # Mock session_manager
+    mock.session_manager = Mock()
+    mock.session_manager.create_session.return_value = "test_session_123"
+
+    # Mock get_course_analytics
+    mock.get_course_analytics.return_value = {
+        "total_courses": 2,
+        "course_titles": [
+            "Introduction to Model Context Protocol",
+            "Advanced MCP Techniques"
+        ]
+    }
+
+    # Mock add_course_folder
+    mock.add_course_folder.return_value = (2, 50)
+
+    return mock
+
+
+@pytest.fixture
+def test_client(mock_rag_system) -> TestClient:
+    """Create a TestClient with mocked RAG system to avoid static file mounting issues."""
+    from fastapi import FastAPI, HTTPException
+    from fastapi.middleware.cors import CORSMiddleware
+    from pydantic import BaseModel
+    from typing import List, Optional
+
+    # Create a test app without static file mounting
+    app = FastAPI(title="Course Materials RAG System - Test")
+
+    # Add CORS middleware
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+    # Define request/response models
+    class QueryRequest(BaseModel):
+        query: str
+        session_id: Optional[str] = None
+
+    class QueryResponse(BaseModel):
+        answer: str
+        sources: List[SourceCitation]
+        session_id: str
+
+    class CourseStats(BaseModel):
+        total_courses: int
+        course_titles: List[str]
+
+    # Define API endpoints
+    @app.post("/api/query", response_model=QueryResponse)
+    async def query_documents(request: QueryRequest):
+        try:
+            session_id = request.session_id
+            if not session_id:
+                session_id = mock_rag_system.session_manager.create_session()
+
+            answer, sources = mock_rag_system.query(request.query, session_id)
+
+            return QueryResponse(
+                answer=answer,
+                sources=sources,
+                session_id=session_id
+            )
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.get("/api/courses", response_model=CourseStats)
+    async def get_course_stats():
+        try:
+            analytics = mock_rag_system.get_course_analytics()
+            return CourseStats(
+                total_courses=analytics["total_courses"],
+                course_titles=analytics["course_titles"]
+            )
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.get("/")
+    async def root():
+        return {"message": "Course Materials RAG System API"}
+
+    return TestClient(app)
+
+
+@pytest.fixture
+def sample_query_request() -> Dict[str, Any]:
+    """Sample query request payload."""
+    return {
+        "query": "What is MCP?",
+        "session_id": "test_session_123"
+    }
+
+
+@pytest.fixture
+def sample_query_request_no_session() -> Dict[str, Any]:
+    """Sample query request without session_id."""
+    return {
+        "query": "What is MCP?"
+    }
+
+
+@pytest.fixture
+def sample_source_citations() -> List[SourceCitation]:
+    """Sample source citations for testing."""
+    return [
+        SourceCitation(
+            text="Introduction to Model Context Protocol - Lesson 1",
+            url="https://example.com/mcp-course/lesson-1"
+        ),
+        SourceCitation(
+            text="Introduction to Model Context Protocol - Lesson 2",
+            url="https://example.com/mcp-course/lesson-2"
         )
     ]
